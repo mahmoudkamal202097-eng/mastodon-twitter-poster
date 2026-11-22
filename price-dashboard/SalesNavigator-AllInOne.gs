@@ -678,6 +678,7 @@ function bestVariant_(variants, spec, titleOf) {
   const ourChip = chip_(spec);
   const ourSize = (/\b(1[3-6])\s*(?:″|"|INCH|-INCH)?/i.exec(label) || [])[1] || '';
   const ourWords = normWords_(label).filter(w => w.length >= 3 && !/\d/.test(w) && ['ENGLISH', 'ARABIC'].indexOf(w) < 0);
+  const ourArabic = /arabic|عربي/i.test(String(spec));   // كيبورد عربي؟ (لو مش مذكور = English)
   let best = null, bestScore = 0;
   variants.forEach(v => {
     const t = String(titleOf(v) || '');
@@ -690,6 +691,8 @@ function bestVariant_(variants, spec, titleOf) {
     const words = normWords_(t);
     let score = vMem.length * 3 + (vChip && vChip === ourChip ? 2 : 0) + (vSize && vSize === ourSize ? 1 : 0);
     ourWords.forEach(w => { if (words.indexOf(w) > -1) score += 1; });
+    if (words.indexOf('ARABIC') > -1 && !ourArabic) score -= 2;          // English عندنا → ما نختارش Arabic/English
+    if (ourArabic && words.indexOf('ARABIC') < 0 && words.indexOf('ENGLISH') > -1) score -= 2;
     if (score > bestScore) { bestScore = score; best = v; }
   });
   return bestScore > 0 ? best : null;
@@ -1162,7 +1165,8 @@ function buildAggregates_(inp) {
       const key = sku + '|' + c.Competitor_Name;
       const m = matchBy[key], pr = priceBy[key];
       if (!m && !pr) return;
-      const low = !!m && String(m.Match_Type) === 'auto' && Number(m.Match_Confidence) < minConf;
+      const cf = m && m.Match_Confidence !== '' && m.Match_Confidence != null ? Number(m.Match_Confidence) : 1;
+      const low = !!m && cf < minConf;   // auto أو manual بثقة قليلة = Review
       const cell = {
         u: m ? m.Competitor_URL : '', m: m ? String(m.Match_Type) : '', cf: m ? Number(m.Match_Confidence) : null,
         note: m ? String(m.Note || '') : '', low: low, p: null, s: null, t: null
@@ -1522,7 +1526,9 @@ function flushCtx_(ctx) {
 
 function validMatch_(m, minConf) {
   if (!m.Competitor_URL || !/^https?:\/\//.test(String(m.Competitor_URL))) return false;
-  return String(m.Match_Type) === 'manual' || Number(m.Match_Confidence) >= minConf;
+  // رابط يدوي حقيقي ثقته 1. أي صف ثقته أقل من الحد (حتى لو مكتوب manual) = محتاج مراجعة، ما يتسعّرش
+  const cf = m.Match_Confidence === '' || m.Match_Confidence == null ? 1 : Number(m.Match_Confidence);
+  return String(m.Match_Type) === 'manual' ? cf >= minConf : cf >= minConf;
 }
 
 /* ======================= مرحلة الأسعار ======================= */

@@ -70,6 +70,7 @@ function bestVariant_(variants, spec, titleOf) {
   const ourChip = chip_(spec);
   const ourSize = (/\b(1[3-6])\s*(?:″|"|INCH|-INCH)?/i.exec(label) || [])[1] || '';
   const ourWords = normWords_(label).filter(w => w.length >= 3 && !/\d/.test(w) && ['ENGLISH', 'ARABIC'].indexOf(w) < 0);
+  const ourArabic = /arabic|عربي/i.test(String(spec));   // كيبورد عربي؟ (لو مش مذكور = English)
   let best = null, bestScore = 0;
   variants.forEach(v => {
     const t = String(titleOf(v) || '');
@@ -82,6 +83,8 @@ function bestVariant_(variants, spec, titleOf) {
     const words = normWords_(t);
     let score = vMem.length * 3 + (vChip && vChip === ourChip ? 2 : 0) + (vSize && vSize === ourSize ? 1 : 0);
     ourWords.forEach(w => { if (words.indexOf(w) > -1) score += 1; });
+    if (words.indexOf('ARABIC') > -1 && !ourArabic) score -= 2;          // English عندنا → ما نختارش Arabic/English
+    if (ourArabic && words.indexOf('ARABIC') < 0 && words.indexOf('ENGLISH') > -1) score -= 2;
     if (score > bestScore) { bestScore = score; best = v; }
   });
   return bestScore > 0 ? best : null;

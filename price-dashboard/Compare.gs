@@ -57,7 +57,8 @@ function buildAggregates_(inp) {
       const key = sku + '|' + c.Competitor_Name;
       const m = matchBy[key], pr = priceBy[key];
       if (!m && !pr) return;
-      const low = !!m && String(m.Match_Type) === 'auto' && Number(m.Match_Confidence) < minConf;
+      const cf = m && m.Match_Confidence !== '' && m.Match_Confidence != null ? Number(m.Match_Confidence) : 1;
+      const low = !!m && cf < minConf;   // auto أو manual بثقة قليلة = Review
       const cell = {
         u: m ? m.Competitor_URL : '', m: m ? String(m.Match_Type) : '', cf: m ? Number(m.Match_Confidence) : null,
         note: m ? String(m.Note || '') : '', low: low, p: null, s: null, t: null

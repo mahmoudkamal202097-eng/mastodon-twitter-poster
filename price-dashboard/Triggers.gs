@@ -175,7 +175,9 @@ function flushCtx_(ctx) {
 
 function validMatch_(m, minConf) {
   if (!m.Competitor_URL || !/^https?:\/\//.test(String(m.Competitor_URL))) return false;
-  return String(m.Match_Type) === 'manual' || Number(m.Match_Confidence) >= minConf;
+  // رابط يدوي حقيقي ثقته 1. أي صف ثقته أقل من الحد (حتى لو مكتوب manual) = محتاج مراجعة، ما يتسعّرش
+  const cf = m.Match_Confidence === '' || m.Match_Confidence == null ? 1 : Number(m.Match_Confidence);
+  return String(m.Match_Type) === 'manual' ? cf >= minConf : cf >= minConf;
 }
 
 /* ======================= مرحلة الأسعار ======================= */
