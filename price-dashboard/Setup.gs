@@ -83,15 +83,32 @@ XG27UCMG|XG27UCMG|C|https://www.compumarts.com/products/asus-rog-strix-xg27ucmg-
 
 /** منافسين افتراضيين — Categories = نطاق الفئات (ممنوع مقارنة منافس بفئة مش بيبيعها). All = كل الفئات */
 const SEED_COMPETITORS = [
-  ['Compumarts', 'https://www.compumarts.com', 'Monitors, Laptops, Gaming, PC', '', true],
-  ['Sigma Computer', 'https://www.sigma-computer.com', 'Monitors, Laptops, Gaming, PC', 'custom', true],
-  ['El Badr Group', 'https://elbadrgroupeg.store', 'Monitors, Laptops, Gaming, PC', '', true],
-  ['Games World Egypt', 'https://www.gamesworldegypt.com', 'Monitors, Gaming', '', true],
-  ['Elyamama Store', 'https://elyamamastore.com', 'Monitors, Laptops, Gaming', '', true],
-  ['B.TECH', 'https://btech.com', 'All', 'custom', true],
-  ['Raya Shop', 'https://www.rayashop.com', 'All', 'custom', true],
-  ['Jumia', 'https://www.jumia.com.eg', 'All', 'custom', true],
-  ['Amazon.eg', 'https://www.amazon.eg', 'All', 'custom', true]
+  // PC / Monitors / Gaming (من غير ماك: علامة ! = استثناء)
+  ['Compumarts', 'https://www.compumarts.com', 'Monitors, Laptops, Gaming, Accessories, Creators, !Macbook, !Apple Products', 'jsonld', true],
+  ['Sigma Computer', 'https://www.sigma-computer.com', 'Monitors, Laptops, Gaming, Accessories, Creators, !Macbook, !Apple Products', 'jsonld', true],
+  ['El Badr Group', 'https://elbadrgroupeg.store', 'Monitors, Laptops, Gaming, Accessories, Creators, !Macbook, !Apple Products', 'jsonld', true],
+  ['Games World Egypt', 'https://www.gamesworldegypt.com', 'Monitors, Gaming, Accessories', 'jsonld', true],
+  ['Elyamama Store', 'https://elyamamastore.com', 'Monitors, Laptops, Gaming, Accessories, !Macbook, !Apple Products', 'shopify', true],
+  // Marketplaces: كل الفئات
+  ['B.TECH', 'https://btech.com', 'All', 'jsonld', true],
+  ['Raya Shop', 'https://www.rayashop.com', 'All', 'jsonld', true],
+  ['Jumia', 'https://www.jumia.com.eg', 'All', 'jsonld', true],
+  ['Amazon.eg', 'https://www.amazon.eg', 'All', 'custom', true],
+  // MacBook / Apple
+  ['Tradeline Egypt', 'https://tradelinestores.com', 'Macbook, Apple Products, Laptops, Gaming', '', true],
+  ['Gadedly', 'https://gadedly.com', 'Macbook, Apple Products', '', true],
+  ['Switch Plus', 'https://switchpluseg.com', 'Macbook, Apple Products', '', true],
+  ['Ennap', 'https://ennap.com', 'Macbook, Apple Products', '', true],
+  ['Digital Egypt', 'https://digital.com.eg', 'Macbook, Apple Products, Laptops', '', true],
+  // MacBook + Windows laptops
+  ['Egypt Laptop', 'https://egyptlaptop.com', 'Laptops, Macbook, Apple Products', '', true],
+  ['2B', 'https://2b.com.eg', 'Laptops, Macbook, Apple Products', '', true],
+  ['Noon Egypt', 'https://www.noon.com/egypt-en', 'Laptops, Macbook, Apple Products, Gaming', 'custom', true],
+  // Windows laptops (من غير ماك)
+  ['Dream 2000', 'https://dream2000.com.eg', 'Laptops, Gaming, Monitors, !Macbook, !Apple Products', '', true],
+  ['Trojan Store', 'https://trojanstoreeg.com', 'Laptops, Gaming, !Macbook, !Apple Products', '', true],
+  ['Albetar Store', 'https://albetarstore.com', 'Laptops, Gaming, !Macbook, !Apple Products', '', true],
+  ['Elghazawy', 'https://elghazawy.com', 'Laptops, Gaming, !Macbook, !Apple Products', '', true]
 ];
 
 function setup() {

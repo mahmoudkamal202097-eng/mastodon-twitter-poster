@@ -19,6 +19,8 @@ function ensureReady_() {
   try {
     const p = PropertiesService.getScriptProperties();
     if (!p.getProperty('TRIGGERS_OK')) { installTriggers(); p.setProperty('TRIGGERS_OK', '1'); }
+    // منافس جديد من غير Platform_Type → نكتشف نوع منصته تلقائيًا
+    if (readRows_(SHEET.COMPETITORS).some(c => c.Competitor_Name && !c.Platform_Type)) detectAllPlatforms_();
     if (sh_(SHEET.PRODUCTS).getLastRow() < 2 && getState_().status !== 'running') startCheck();
   } catch (e) { log_('ERROR', 'ensureReady_', e.message); }
 }

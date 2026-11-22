@@ -60,12 +60,20 @@ function matchConfidence_(ourName, ourToken, candTitle) {
 
 /* ======================= نطاق الفئات ======================= */
 
-/** هل المنتج جوه نطاق فئات المنافس؟ */
+/**
+ * هل المنتج جوه نطاق فئات المنافس؟
+ *   "Monitors, Laptops"                  → أي فئة منهم
+ *   "All"                                → كل الفئات
+ *   "Laptops, !Macbook, !Apple Products" → لابتوبات بس ما عدا الماك (علامة ! = استثناء)
+ */
 function inScope_(productCategory, competitorCategories) {
-  const cats = String(competitorCategories || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  if (!cats.length || cats.indexOf('all') > -1 || cats.indexOf('*') > -1) return true;
+  const toks = String(competitorCategories || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
   const pc = String(productCategory || '').toLowerCase();
-  return cats.some(c => pc.indexOf(c) > -1);
+  const neg = toks.filter(t => t.charAt(0) === '!').map(t => t.slice(1).trim()).filter(Boolean);
+  if (neg.some(n => pc.indexOf(n) > -1)) return false;
+  const pos = toks.filter(t => t.charAt(0) !== '!');
+  if (!pos.length || pos.indexOf('all') > -1 || pos.indexOf('*') > -1) return true;
+  return pos.some(c => pc.indexOf(c) > -1);
 }
 
 /* ======================= البحث التلقائي ======================= */
