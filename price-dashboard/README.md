@@ -1,4 +1,4 @@
-# PriceRadar — Geeks Store
+# Sales Navigator — Geeks Store
 
 أداة مراقبة أسعار المنافسين: Google Apps Script + Google Sheets (قاعدة البيانات) + داشبورد Web App.
 
@@ -16,12 +16,12 @@
 | `Triggers.gs` | الجدولة + الـ Queue (cursor في PropertiesService + LockService) |
 | `Api.gs` | `doGet` + كل دوال الداشبورد |
 | `Dashboard.html` / `Style.html` / `Script.html` | الداشبورد |
-| `PriceRadar-AllInOne.gs` | **كل ده في ملف واحد** للصق السريع |
+| `SalesNavigator-AllInOne.gs` | **كل ده في ملف واحد** للصق السريع |
 
 ## النشر (10 دقايق)
 
-1. افتح <https://script.new> وسمّي المشروع **PriceRadar**.
-2. **أسهل طريقة:** امسح محتوى `Code.gs` والصق `PriceRadar-AllInOne.gs` كله.
+1. افتح <https://script.new> وسمّي المشروع **Sales Navigator**.
+2. **أسهل طريقة:** امسح محتوى `Code.gs` والصق `SalesNavigator-AllInOne.gs` كله.
    (أو أنشئ الملفات واحد واحد بنفس الأسماء: الـ `.gs` كـ Script، والـ `.html` كـ HTML.)
 3. من ⚙️ Project Settings فعّل **Show "appsscript.json"** والصق محتوى `appsscript.json`.
 4. اختار الدالة **`setup`** ← Run ← وافق على الصلاحيات (Sheets / External requests / Triggers / Mail).

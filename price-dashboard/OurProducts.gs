@@ -30,7 +30,7 @@ function fetchOurItems_() {
 
 /** مزامنة منتجاتنا — بتتنادى من الـ Trigger ومن زرار "Update our products" */
 function syncOurProducts() {
-  const items = fetchOurItems_();
+  const items = fetchOurItems_().map(regroup_);
   const old = {};
   readRows_(SHEET.PRODUCTS).forEach(r => old[String(r.SKU)] = r);
 
@@ -54,6 +54,22 @@ function syncOurProducts() {
   clearCache_();
   log_('INFO', 'syncOurProducts', 'متراقب: ' + rows.length + ' — اتشال/اتجاهل: ' + removed);
   return { monitored: rows.length, removed: removed };
+}
+
+/**
+ * كاتيجوري لوحدها للـ Wearables (WHOOP / Google Fitbit): أي منتج اسمه أو براندله فيه واحدة من
+ * wearables_keywords (Settings) بيتنقل لكاتيجوري wearables_label — وبالتالي المنافسين بتوعه
+ * بيتحددوا بفئة "WHOOP & Fitbit" بس (مش بتتقارن بمنافسين الكمبيوتر).
+ */
+function regroup_(it) {
+  const kw = String(getSetting_('wearables_keywords') || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+  const hay = (String(it.name) + ' ' + String(it.brand)).toLowerCase();
+  const hit = kw.filter(k => hay.indexOf(k) > -1)[0];
+  if (!hit) return it;
+  const label = String(getSetting_('wearables_label') || 'WHOOP & Fitbit').trim();
+  const sub = /whoop/.test(hit) ? 'WHOOP' : (/fitbit|pixel watch/.test(hit) ? 'Fitbit & Google' : titleCase_(hit));
+  it.category = label + ' / ' + sub;
+  return it;
 }
 
 /* ---------- WooCommerce (Store API) ---------- */

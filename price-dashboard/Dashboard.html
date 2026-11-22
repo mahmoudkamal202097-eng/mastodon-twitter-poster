@@ -4,7 +4,7 @@
 <base target="_top">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PriceRadar — Geeks Store</title>
+<title>Sales Navigator — Geeks Store</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -13,34 +13,41 @@
 </head>
 <body>
 
+<div class="shell">
+<aside class="side">
+  <div class="logo">
+    <span class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg></span>
+    <div>Sales Navigator<small>Geeks Store · أسعار المنافسين</small></div>
+  </div>
+  <nav class="nav" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" data-tab="overview" aria-selected="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</button>
+    <button type="button" role="tab" data-tab="products" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>Products</button>
+    <button type="button" role="tab" data-tab="alerts" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>Alerts <span class="badge" id="bell" hidden>0</span></button>
+    <button type="button" role="tab" data-tab="settings" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Settings</button>
+  </nav>
+  <div class="side-foot">
+    <button class="btn" id="btnTheme" type="button" aria-label="Toggle light / dark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Light / Dark</button>
+    <span>Prices in EGP · Cairo time</span>
+  </div>
+</aside>
+<div class="col">
 <header class="top">
   <div class="top-in">
-    <div class="logo">
-      <span class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 19 5"/></svg></span>
-      <div>PriceRadar<small>Geeks Store · أسعار المنافسين</small></div>
-    </div>
-    <nav class="nav" role="tablist" aria-label="Sections">
-      <button type="button" role="tab" data-tab="overview" aria-selected="true">Overview</button>
-      <button type="button" role="tab" data-tab="products" aria-selected="false">Products</button>
-      <button type="button" role="tab" data-tab="settings" aria-selected="false">Settings</button>
-      <button type="button" role="tab" data-tab="alerts" aria-selected="false">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-        Alerts <span class="badge" id="bell" hidden>0</span>
-      </button>
-    </nav>
+    <div class="gsearch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="gsearch" type="search" placeholder="Search products by name or SKU…  ابحث عن منتج" autocomplete="off"></div>
     <div class="sp"></div>
     <div class="pillbar" id="prog" hidden><span class="dot"></span><span id="progTxt">Checking…</span><span class="bar"><i id="progBar" style="width:0%"></i></span><b class="num" id="progPct">0%</b></div>
     <span class="pillbar hide-s" id="updated" title="Last time competitor prices were read">Updated <b id="updatedTxt">—</b></span>
     <button class="btn" id="btnSyncSheet" type="button" title="Re-read the sheet and check new / edited links — اقرا الشيت وافحص اللينكات الجديدة"><span class="spin"></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></svg><span class="hide-s">Sync sheet</span></button>
     <button class="btn primary" id="btnRun" type="button"><span class="spin"></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg><span id="btnRunTxt">Run check now</span></button>
-    <button class="btn icon" id="btnTheme" type="button" aria-label="Toggle light / dark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
   </div>
 </header>
 
 <main id="app">
-  <div class="grid g-info"><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div></div>
-  <div class="grid g-pos" style="margin-top:16px"><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div><div class="sk" style="height:150px"></div></div>
+  <div class="sk" style="height:150px;border-radius:18px"></div>
+  <div class="grid g-info" style="margin-top:16px"><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div><div class="sk" style="height:92px"></div></div>
 </main>
+</div>
+</div>
 
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-hidden="true"></aside>

@@ -1,5 +1,5 @@
 /**
- * PriceRadar — Setup.gs
+ * Sales Navigator — Setup.gs
  * setup(): ينشئ الشيتات بالهيدرز (مجمّدة) + الإعدادات + المنافسين + الروابط اليدوية الأولية
  *          ثم يجلب منتجاتنا ويربط الروابط بالـ SKU ويكتشف نوع منصة كل منافس.
  * بعدها شغّل installTriggers() مرة واحدة.
@@ -106,7 +106,7 @@ const SEED_COMPETITORS = [
   // MacBook + Windows laptops
   ['Egypt Laptop', 'https://egyptlaptop.com', 'Laptops, Macbook, Apple Products', '', true],
   ['2B', 'https://2b.com.eg', 'Laptops, Macbook, Apple Products', '', true],
-  ['Noon Egypt', 'https://www.noon.com/egypt-en', 'Laptops, Macbook, Apple Products, Gaming', 'custom', true],
+  ['Noon Egypt', 'https://www.noon.com/egypt-en', 'Laptops, Macbook, Apple Products, Gaming, WHOOP & Fitbit', 'custom', true],
   // Windows laptops (من غير ماك)
   ['Dream 2000', 'https://dream2000.com.eg', 'Laptops, Gaming, Monitors, !Macbook, !Apple Products', '', true],
   ['Albetar Store', 'https://albetarstore.com', 'Laptops, Gaming, !Macbook, !Apple Products', '', true],

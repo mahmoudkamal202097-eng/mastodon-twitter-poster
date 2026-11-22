@@ -7,7 +7,7 @@
 function doGet() {
   ensureReady_();
   return HtmlService.createTemplateFromFile('Dashboard').evaluate()
-    .setTitle('PriceRadar — Geeks Store')
+    .setTitle('Sales Navigator — Geeks Store')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }

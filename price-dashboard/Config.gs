@@ -5,7 +5,7 @@
  */
 
 const APP = {
-  NAME: 'PriceRadar',
+  NAME: 'Sales Navigator',
   TZ: 'Africa/Cairo',
   MIN_PRICE: 500,            // أي سعر أقل من كده = placeholder (زي "1 ج") ويتتجاهل
   BUDGET_MS: 270 * 1000,     // ميزانية الوقت لكل تشغيل (حد Apps Script = 6 دقايق)
@@ -53,6 +53,8 @@ const DEFAULT_SETTINGS = [
   ['history_keep_days', '180', 'مدة الاحتفاظ بـ Price_History'],
   ['firecrawl_api_key', '', 'مفتاح Firecrawl (اختياري) — بيقرأ المواقع اللي بتحجب Google أو بتعرض الأسعار بـ JavaScript'],
   ['firecrawl_max_per_run', '80', 'أقصى عدد صفحات عبر Firecrawl في التشغيل الواحد (بيتحكم في التكلفة)'],
+  ['wearables_keywords', 'whoop,fitbit,pixel watch', 'منتجات بتتحط في كاتيجوري لوحدها (كلمات في الاسم أو البراند، مفصولة بفاصلة)'],
+  ['wearables_label', 'WHOOP & Fitbit', 'اسم الكاتيجوري بتاعة الـ Wearables'],
   ['label_only_us', "Only we have it", 'اسم الحالة في الداشبورد'],
   ['label_same', 'Same price', 'اسم الحالة في الداشبورد'],
   ['label_cheaper', "We're cheaper", 'اسم الحالة في الداشبورد'],
@@ -89,7 +91,7 @@ function ssId_() {
   if (id) return id;
   let s = null;
   try { s = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
-  if (!s) s = SpreadsheetApp.create('PriceRadar — Geeks Store');
+  if (!s) s = SpreadsheetApp.create('Sales Navigator — Geeks Store');
   id = s.getId();
   p.setProperty('SSID', id);
   return id;
