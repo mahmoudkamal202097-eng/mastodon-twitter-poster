@@ -68,7 +68,8 @@ function regroup_(it) {
   if (!hit) return it;
   const label = String(getSetting_('wearables_label') || 'WHOOP & Fitbit').trim();
   const sub = /whoop/.test(hit) ? 'WHOOP' : (/fitbit|pixel watch/.test(hit) ? 'Fitbit & Google' : titleCase_(hit));
-  it.category = label + ' / ' + sub;
+  // نحتفظ بـ Wearables / Smart Products في المسار عشان منافسين الـ Wearables (Elvara, SmartKoshk...) يتطابقوا مع النطاق
+  it.category = label + ' / ' + sub + ' / Wearables / Smart Products';
   return it;
 }
 

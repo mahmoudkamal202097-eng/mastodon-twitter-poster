@@ -115,7 +115,7 @@ function refreshSku_(sku, discover) {
     sh_(SHEET.PRODUCTS).getRange(p._row, dcol).setValue(new Date());
   }
   const list = matches.filter(m => ctx.comps[m.Competitor] && validMatch_(m, minConf))
-    .map(m => ({ sku: sku, competitor: m.Competitor, url: String(m.Competitor_URL), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row }));
+    .map(m => ({ sku: sku, competitor: m.Competitor, url: String(m.Competitor_URL), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row, spec: String(p.Name) }));
   applyChecks_(ctx, checkMatches_(list));
   flushCtx_(ctx);
   return { checked: list.length, ok: ctx.done, failed: ctx.failed, found: found };
@@ -257,7 +257,7 @@ function checkNewLinks_(cap) {
   const ctx = loadCtx_(false);
   const pending = readRows_(SHEET.MATCHES).filter(m => ctx.products[String(m.SKU)] && ctx.comps[m.Competitor] && bool_(ctx.comps[m.Competitor].Active) &&
     validMatch_(m, minConf) && String(m.Competitor_URL).trim() !== String(m.Checked_URL).trim());
-  const list = pending.slice(0, cap).map(m => ({ sku: String(m.SKU), competitor: m.Competitor, url: String(m.Competitor_URL).trim(), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row }));
+  const list = pending.slice(0, cap).map(m => ({ sku: String(m.SKU), competitor: m.Competitor, url: String(m.Competitor_URL).trim(), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row, spec: String(ctx.products[String(m.SKU)].Name) }));
   if (list.length) { applyChecks_(ctx, checkMatches_(list)); flushCtx_(ctx); }
   return { pending: pending.length, checked: list.length, ok: ctx.done, failed: ctx.failed, remaining: Math.max(0, pending.length - list.length) };
 }

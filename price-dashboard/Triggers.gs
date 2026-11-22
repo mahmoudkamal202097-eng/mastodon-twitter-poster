@@ -185,7 +185,7 @@ function stepPrices_(s, left) {
   const ctx = loadCtx_(s.seed);
   const list = readRows_(SHEET.MATCHES)
     .filter(m => ctx.products[String(m.SKU)] && ctx.comps[m.Competitor] && bool_(ctx.comps[m.Competitor].Active) && validMatch_(m, minConf))
-    .map(m => ({ sku: String(m.SKU), competitor: m.Competitor, url: String(m.Competitor_URL), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row }));
+    .map(m => ({ sku: String(m.SKU), competitor: m.Competitor, url: String(m.Competitor_URL), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row, spec: String(ctx.products[String(m.SKU)].Name) }));
   s.total = list.length;
   // دفعة كبيرة بتتفحص بالتوازي، والكتابة في الشيت (الأبطأ) مرة كل ~4 دفعات مش كل دفعة
   const group = Math.max(1, Math.round(getNum_('batch_size', 25))) * 2;
@@ -228,7 +228,7 @@ function stepDiscover_(s, left) {
       s.found += newRows.length;
       // نجيب سعر المطابقات الموثوقة فورًا
       const fresh = newRows.map((r, k) => ({ r: r })).filter(x => Number(x.r[4]) >= minConf)
-        .map(x => ({ sku: String(x.r[0]), competitor: x.r[1], url: x.r[2], platform: (readCompPlatform_(comps, x.r[1])), row: 0 }));
+        .map(x => ({ sku: String(x.r[0]), competitor: x.r[1], url: x.r[2], platform: (readCompPlatform_(comps, x.r[1])), row: 0, spec: String((ctx.products[String(x.r[0])] || {}).Name || '') }));
       if (fresh.length) { applyChecks_(ctx, checkMatches_(fresh)); flushCtx_(ctx); }
     }
     // علّم المنتجات دي اتبحث عنها

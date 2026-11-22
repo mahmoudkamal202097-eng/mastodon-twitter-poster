@@ -59,8 +59,36 @@ function buildRequest_(url, platform) {
   return { kind: 'page', req: req_(u) };
 }
 
-/** يحلل رد الاستراتيجية → {price, inStock, source} أو null */
-function parseResponse_(kind, resp, pageUrl) {
+/**
+ * يختار المواصفة المطابقة لمنتجنا من مواصفات صفحة المنافس (رام/تخزين/شريحة/لون/حجم).
+ * variants: [{title, ...}] — بيرجّع الأفضل أو null لو مفيش واحدة متطابقة بثقة.
+ */
+function bestVariant_(variants, spec, titleOf) {
+  const label = String(spec || '').split(' — ').slice(1).join(' ');
+  if (!label) return null;                                   // منتجنا مالوش مواصفات
+  const ourMem = memSpecs_(label).split(',').filter(Boolean);
+  const ourChip = chip_(spec);
+  const ourSize = (/\b(1[3-6])\s*(?:″|"|INCH|-INCH)?/i.exec(label) || [])[1] || '';
+  const ourWords = normWords_(label).filter(w => w.length >= 3 && !/\d/.test(w) && ['ENGLISH', 'ARABIC'].indexOf(w) < 0);
+  let best = null, bestScore = 0;
+  variants.forEach(v => {
+    const t = String(titleOf(v) || '');
+    const vMem = memSpecs_(t).split(',').filter(Boolean);
+    if (vMem.some(x => ourMem.indexOf(x) < 0)) return;      // مواصفة مش عندنا = جهاز تاني
+    const vChip = chip_(t);
+    if (ourChip && vChip && ourChip !== vChip) return;
+    const vSize = (/\b(1[3-6])\b/.exec(t) || [])[1] || '';
+    if (ourSize && vSize && ourSize !== vSize) return;
+    const words = normWords_(t);
+    let score = vMem.length * 3 + (vChip && vChip === ourChip ? 2 : 0) + (vSize && vSize === ourSize ? 1 : 0);
+    ourWords.forEach(w => { if (words.indexOf(w) > -1) score += 1; });
+    if (score > bestScore) { bestScore = score; best = v; }
+  });
+  return bestScore > 0 ? best : null;
+}
+
+/** يحلل رد الاستراتيجية → {price, inStock, source} أو null. spec = اسم منتجنا (فيه المواصفات بعد " — ") */
+function parseResponse_(kind, resp, pageUrl, spec) {
   if (!resp) return null;
   const code = resp.getResponseCode();
   if (code !== 200) return null;
@@ -70,15 +98,31 @@ function parseResponse_(kind, resp, pageUrl) {
       const j = JSON.parse(body);
       const vs = j.variants || [];
       const live = vs.filter(v => v.available);
-      const pick = live.length ? live.reduce((a, b) => (a.price <= b.price ? a : b)) : (vs[0] || {});
+      let pick = null;
+      const vid = (/[?&]variant=(\d+)/.exec(String(pageUrl)) || [])[1];
+      if (vid) pick = vs.filter(v => String(v.id) === vid)[0] || null;               // لينك فيه variant محدد
+      if (!pick && vs.length > 1 && String(spec || '').indexOf(' — ') > -1) {
+        pick = bestVariant_(vs, spec, v => v.title || v.public_title || [v.option1, v.option2, v.option3].join(' '));
+        if (!pick) return { price: null, inStock: false, source: 'shopify', hasAvail: false, note: 'variant not matched' };
+      }
+      if (!pick) pick = live.length ? live.reduce((a, b) => (a.price <= b.price ? a : b)) : (vs[0] || {});
       // Shopify .js بيرجّع السعر بالقروش (integer) → نقسم على 100
       const price = Number(pick.price != null ? pick.price : j.price) / 100;
-      return finalizePrice_(price, !!(j.available || live.length), 'shopify');
+      return finalizePrice_(price, pick.available != null ? !!pick.available : !!(j.available || live.length), 'shopify');
     }
     if (kind === 'woo') {
       const arr = JSON.parse(body);
       const p = Array.isArray(arr) ? arr[0] : null;
       if (!p) return null;
+      // منتج متغيّر (ماك بوك بمواصفات) → نجيب مواصفاته ونختار المطابقة لمنتجنا
+      if ((p.type === 'variable' || (p.variations && p.variations.length > 1)) && String(spec || '').indexOf(' — ') > -1) {
+        const vr = UrlFetchApp.fetch(originOf_(pageUrl) + '/wp-json/wc/store/v1/products?type=variation&parent=' + p.id + '&per_page=100', { muteHttpExceptions: true, headers: SCRAPE_UA });
+        const vlist = vr.getResponseCode() === 200 ? JSON.parse(vr.getContentText()) : [];
+        const pv = bestVariant_(vlist, spec, v => decodeHtml_(v.variation || v.name || ''));
+        if (!pv) return { price: null, inStock: false, source: 'woocommerce', hasAvail: false, note: 'variant not matched' };
+        const vp = pv.prices || {};
+        return finalizePrice_(Number(vp.price) / Math.pow(10, Number(vp.currency_minor_unit || 0)), !!pv.is_in_stock, 'woocommerce');
+      }
       const pr = p.prices || {};
       const price = Number(pr.price) / Math.pow(10, Number(pr.currency_minor_unit || 0));
       return finalizePrice_(price, !!p.is_in_stock, 'woocommerce');
@@ -204,8 +248,9 @@ function checkMatches_(matches) {
     const resps = fetchBatch_(plan.map(p => p.req));
     const second = [];       // اللي فشل بالاستراتيجية الأولى نجرّب صفحته
     const results = chunk.map((m, k) => {
-      const r = parseResponse_(plan[k].kind, resps[k], m.url);
+      const r = parseResponse_(plan[k].kind, resps[k], m.url, m.spec);
       if (r && r.price) return { match: m, result: r };
+      if (r && r.note === 'variant not matched') return { match: m, result: null, error: 'variant not matched (ضيف لينك المواصفة نفسها)' };
       if (plan[k].kind !== 'page') { second.push(k); return { match: m, result: null }; }
       return { match: m, result: r, error: errorOf_(resps[k], r) };
     });

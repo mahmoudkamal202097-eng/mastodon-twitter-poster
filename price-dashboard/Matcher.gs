@@ -45,7 +45,8 @@ function modelToken_(name, sku) {
   if (ac) return ac;
   const bad = /^\d+(HZ|GB|TB|W|MM|INCH|MS|MP|AH|MAH|CM|KG|K)$/;
   const fromSku = String(sku || '').trim();
-  if (fromSku.length >= 4) return fromSku.toUpperCase();
+  // SKU أرقام بس (زي 955-13-012-036-031 بتاع WHOOP) = كود داخلي، المنافس مش هيلاقيه → ندوّر بالاسم
+  if (fromSku.length >= 4 && /[A-Z]/i.test(fromSku) && /\d/.test(fromSku)) return fromSku.toUpperCase();
   const cand = String(name || '').toUpperCase().split(/[\s,()\/]+/)
     .map(w => w.replace(/[^A-Z0-9\-]/g, '')).filter(w => w.length >= 5 && /[A-Z]/.test(w) && /\d/.test(w) && !bad.test(w));
   return cand[0] || '';
@@ -85,6 +86,8 @@ function matchConfidence_(ourName, ourToken, candTitle) {
   }
   // من غير كود موديل: نقبل لو الرام/التخزين اتطابقوا بالظبط والشريحة واحدة والاسم قريب
   if (so && so === sc && specPenal === 0 && j >= 0.6) return Math.min(0.9, 0.55 + j * 0.5);
+  // منتجات من غير رام/تخزين (WHOOP bands، إكسسوارات): الاسم لازم يكون قريب جدًا
+  if (!so && !sc && specPenal === 0 && j >= 0.75) return 0.85;
   return Math.max(0, Math.min(0.79, j * 0.9 - specPenal));
 }
 

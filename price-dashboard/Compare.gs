@@ -112,7 +112,7 @@ function buildAggregates_(inp) {
     categories: Object.keys(catCount).map(k => ({ name: k, count: catCount[k] })).sort((a, b) => b.count - a.count),
     products: products,
     summary: summary,
-    byCategory: Object.keys(byCat).map(k => byCat[k]).sort((a, b) => (b.pricier + b.cheaper + b.same + b.only_us) - (a.pricier + a.cheaper + a.same + a.only_us)),
+    byCategory: Object.keys(byCat).map(k => byCat[k]).sort((a, b) => (b.pricier + b.cheaper + b.same + b.only_us + b.other) - (a.pricier + a.cheaper + a.same + a.only_us + a.other)),
     top: top,
     trend: buildTrend_(inp.history, 30),
     unread: (inp.alerts || []).filter(a => !bool_(a.Read)).length

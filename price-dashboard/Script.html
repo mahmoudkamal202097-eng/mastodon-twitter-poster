@@ -112,6 +112,14 @@ function poll() {
 /* ============================== derive: المقارنة حسب الشركات المختارة ============================== */
 function selOn(name) { return !SEL || SEL[name]; }
 function visibleComps() { return D.active.filter(function (c) { return selOn(c.name); }); }
+/** نفس قاعدة نطاق الفئات بتاعة السيرفر (All / فئات / !استثناء) */
+function inScopeC(cat, cats) {
+  var toks = String(cats || '').split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean), pc = String(cat || '').toLowerCase();
+  var neg = toks.filter(function (t) { return t.charAt(0) === '!'; }).map(function (t) { return t.slice(1).trim(); });
+  if (neg.some(function (n) { return n && pc.indexOf(n) > -1; })) return false;
+  var pos = toks.filter(function (t) { return t.charAt(0) !== '!'; });
+  return !pos.length || pos.indexOf('all') > -1 || pos.some(function (c) { return pc.indexOf(c) > -1; });
+}
 function derive() {
   var same = D.samePct != null ? D.samePct : 0.5, sum = { only_us: 0, same: 0, cheaper: 0, pricier: 0, not_checked: 0, needs_help: 0, total: 0 }, byCat = {}, withData = 0;
   D.products.forEach(function (p) {
@@ -145,7 +153,7 @@ function derive() {
   });
   sum.coveragePct = sum.total ? Math.round(withData / sum.total * 100) : 0; sum.withData = withData;
   D.summary = sum;
-  D.byCategory = Object.keys(byCat).map(function (k) { return byCat[k]; }).sort(function (a, b) { return (b.pricier + b.cheaper + b.same + b.only_us) - (a.pricier + a.cheaper + a.same + a.only_us); });
+  D.byCategory = Object.keys(byCat).map(function (k) { return byCat[k]; }).sort(function (a, b) { return (b.pricier + b.cheaper + b.same + b.only_us + b.other) - (a.pricier + a.cheaper + a.same + a.only_us + a.other); });
   D.top = D.products.filter(function (p) { return p.st === 'pricier'; }).sort(function (a, b) { return b.gap - a.gap; }).slice(0, 10).map(function (p) {
     var c = p.minBy[0] ? p.cells[p.minBy[0]] : null;
     return { sku: p.sku, n: p.n, img: p.img, comp: p.minBy[0], cp: p.min, p: p.p, gap: p.gap, u: c ? c.u : '' };
@@ -189,7 +197,7 @@ function stackedBars(rows) {
   var segs = [['pricier', 'var(--pricey)'], ['same', 'var(--same)'], ['cheaper', 'var(--cheap)'], ['only_us', 'var(--only)'], ['other', 'var(--other)']];
   var h = '<div class="legend">' + segs.map(function (s) { return '<span><i style="background:' + s[1] + '"></i>' + (s[0] === 'other' ? 'Not checked / needs help' : ST[s[0]].l) + '</span>'; }).join('') + '</div><div class="chart-box">';
   if (!rows.length) return h + '<div class="empty">No products yet · ' + ar('لسه مفيش منتجات') + '</div></div>';
-  rows.slice(0, 9).forEach(function (r) {
+  rows.slice(0, 12).forEach(function (r) {
     var tot = r.pricier + r.same + r.cheaper + r.only_us + r.other;
     h += '<div class="cbar" data-cat="' + esc(r.cat) + '" title="Open ' + esc(r.cat) + '"><div class="nm">' + esc(r.cat) + '</div><div class="bar">' +
       segs.map(function (s) { return r[s[0]] ? '<span style="flex:' + r[s[0]] + ';background:' + s[1] + '" title="' + (s[0] === 'other' ? 'Other' : ST[s[0]].l) + ': ' + r[s[0]] + '"></span>' : ''; }).join('') +
@@ -318,7 +326,8 @@ function renderProducts() {
   var counts = {}; D.products.forEach(function (p) { counts[p.st] = (counts[p.st] || 0) + 1; });
   var h = '<section class="card" style="overflow:hidden"><div class="cats">' +
     '<button type="button" class="cat" data-cat="" aria-pressed="' + (!S.cat) + '">All<em class="num">' + D.products.length + '</em></button>' +
-    D.categories.slice(0, 10).map(function (c) { return '<button type="button" class="cat" data-cat="' + esc(c.name) + '" aria-pressed="' + (S.cat === c.name) + '">' + esc(c.name) + '<em class="num">' + c.count + '</em></button>'; }).join('') + '</div>' +
+    D.categories.slice(0, 8).map(function (c) { return '<button type="button" class="cat" data-cat="' + esc(c.name) + '" aria-pressed="' + (S.cat === c.name) + '">' + esc(c.name) + '<em class="num">' + c.count + '</em></button>'; }).join('') +
+    (D.categories.length > 8 ? '<select class="sel" id="fMoreCat" aria-label="More categories"><option value="">More categories…</option>' + D.categories.slice(8).map(function (c) { return '<option value="' + esc(c.name) + '"' + (S.cat === c.name ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.count + ')</option>'; }).join('') + '</select>' : '') + '</div>' +
     '<div class="tool"><div class="search">' + ICON.search + '<input id="q" type="search" placeholder="Search SKU or name…  ( / )" title="بحث بالاسم أو الـ SKU" value="' + esc(S.q) + '" autocomplete="off"></div>' +
     '<select class="sel" id="fComp" aria-label="Competitor"><option value="">All competitors</option>' + D.active.map(function (c) { return '<option' + (S.comp === c.name ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select>' +
     '<select class="sel" id="fSort" aria-label="Sort"><option value="priority"' + (S.sort === 'priority' ? ' selected' : '') + '>Sort: Priority</option><option value="gap"' + (S.sort === 'gap' ? ' selected' : '') + '>Sort: Biggest gap</option><option value="price"' + (S.sort === 'price' ? ' selected' : '') + '>Sort: Our price</option><option value="name"' + (S.sort === 'name' ? ' selected' : '') + '>Sort: Name</option></select>' +
@@ -338,7 +347,7 @@ function renderTable() {
   var rows = filtered(), per = S.per, pages = Math.max(1, Math.ceil(rows.length / per));
   if (S.page >= pages) S.page = pages - 1;
   var slice = rows.slice(S.page * per, S.page * per + per);
-  var comps = visibleComps();
+  var comps = visibleComps().filter(function (c) { return slice.some(function (p) { return p.cells[c.name] || inScopeC(p.cat, c.categories); }); });
   var h = '<div class="tbl-wrap"><table class="t"><thead><tr><th class="c-prod">Product</th><th>Our price</th><th>Gap</th><th>Status</th><th title="Closest competitor cheaper than us — أقرب منافس أرخص مننا">Closest cheaper ↓</th><th title="Closest competitor pricier than us — أقرب منافس أغلى مننا">Closest pricier ↑</th>' +
     comps.map(function (c) { return '<th title="' + esc(c.categories) + '">' + esc(c.name) + '</th>'; }).join('') + '<th></th></tr></thead><tbody>';
   if (!slice.length) h += '<tr><td colspan="' + (7 + comps.length) + '" class="empty">No products match these filters · ' + ar('مفيش منتجات مطابقة') + '</td></tr>';
@@ -600,6 +609,7 @@ document.addEventListener('click', function (e) {
 });
 document.addEventListener('change', function (e) {
   if (e.target.id === 'fComp') { S.comp = e.target.value; S.page = 0; renderTable(); }
+  if (e.target.id === 'fMoreCat') { S.cat = e.target.value; S.page = 0; renderProducts(); }
   if (e.target.id === 'fSort') { S.sort = e.target.value; S.page = 0; renderTable(); }
   if (e.target.id === 'aUnread') { S.aUnread = e.target.checked; renderAlerts(); }
 });
