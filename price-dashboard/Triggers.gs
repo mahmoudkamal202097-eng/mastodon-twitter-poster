@@ -187,13 +187,16 @@ function stepPrices_(s, left) {
     .filter(m => ctx.products[String(m.SKU)] && ctx.comps[m.Competitor] && bool_(ctx.comps[m.Competitor].Active) && validMatch_(m, minConf))
     .map(m => ({ sku: String(m.SKU), competitor: m.Competitor, url: String(m.Competitor_URL), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row }));
   s.total = list.length;
-  const group = Math.max(1, Math.round(getNum_('batch_size', 12))) * 3;
+  // دفعة كبيرة بتتفحص بالتوازي، والكتابة في الشيت (الأبطأ) مرة كل ~4 دفعات مش كل دفعة
+  const group = Math.max(1, Math.round(getNum_('batch_size', 25))) * 2;
+  let sinceFlush = 0;
   while (s.i < list.length && left() > 40000) {
     const chunk = list.slice(s.i, s.i + group);
     applyChecks_(ctx, checkMatches_(chunk));
-    flushCtx_(ctx);
-    s.i += chunk.length; s.done += 0; setState_(s);
+    s.i += chunk.length; sinceFlush++;
+    if (sinceFlush >= 4 || s.i >= list.length) { flushCtx_(ctx); sinceFlush = 0; setState_(s); }
   }
+  if (sinceFlush) flushCtx_(ctx);
   s.done = (s.done || 0) + ctx.done; s.failed = (s.failed || 0) + ctx.failed;
   return s;
 }

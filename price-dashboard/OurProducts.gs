@@ -175,7 +175,7 @@ function upsertHistory_(entries) {
   const last = sh.getLastRow();
   // نلاقي بداية كتلة النهارده (الصفوف مرتبة بالتاريخ بالإضافة)
   let start = last + 1;
-  const tail = Math.min(last - 1, 20000);
+  const tail = Math.min(last - 1, 6000);   // كتلة النهارده دايمًا في الآخر — مش محتاجين نقرا أكتر
   let existing = [];
   if (tail > 0) {
     const from = last - tail + 1;

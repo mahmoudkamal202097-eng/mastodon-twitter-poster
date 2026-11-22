@@ -45,9 +45,9 @@ const DEFAULT_SETTINGS = [
   ['alert_change_pct', '2', 'ينبّه على تغيّر سعر المنافس بالنسبة دي أو أكتر'],
   ['refresh_hours', '9,14,20', 'ساعات الفحص اليومي (توقيت القاهرة) مفصولة بفاصلة'],
   ['product_sync_every_hours', '6', 'مزامنة منتجاتنا كل كام ساعة (0 = معطّل)'],
-  ['check_interval_minutes', '2', 'الفاصل قبل استكمال الدفعة التالية لو الوقت خلص'],
-  ['batch_size', '12', 'عدد الطلبات المتوازية في الدفعة'],
-  ['batch_sleep_ms', '500', 'تأخير بين الدفعات (مللي ثانية)'],
+  ['check_interval_minutes', '1', 'الفاصل قبل استكمال الدفعة التالية لو الوقت خلص'],
+  ['batch_size', '25', 'عدد الطلبات المتوازية في الدفعة'],
+  ['batch_sleep_ms', '150', 'تأخير بين الدفعات (مللي ثانية)'],
   ['match_min_confidence', '0.8', 'أقل ثقة لقبول مطابقة تلقائية (أقل منها = Exact match needed)'],
   ['rediscover_days', '7', 'نعيد البحث التلقائي عن منتج مالوش مطابقات بعد كام يوم'],
   ['history_keep_days', '180', 'مدة الاحتفاظ بـ Price_History'],
@@ -139,6 +139,18 @@ function writeAll_(name, rows) {
 }
 
 function padRow_(r, w) { r = r.slice(0, w); while (r.length < w) r.push(''); return r; }
+
+/** آخر maxRows صف بس (للتاريخ الكبير — أسرع بكتير من قراءة الشيت كله) */
+function readRowsTail_(name, maxRows) {
+  const sh = sh_(name), last = sh.getLastRow();
+  if (last < 2) return [];
+  const n = Math.min(last - 1, maxRows), start = last - n + 1, head = HEADERS[name];
+  return sh.getRange(start, 1, n, head.length).getValues().map((r, i) => {
+    const o = { _row: start + i };
+    head.forEach((h, k) => o[h] = r[k]);
+    return o;
+  });
+}
 
 function appendRows_(name, rows) {
   if (!rows.length) return;

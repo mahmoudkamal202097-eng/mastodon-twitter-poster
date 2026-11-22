@@ -54,6 +54,8 @@ var ALERT_T = {
 };
 
 /* ============================== state ============================== */
+var SEL = null;   // null = كل الشركات المفعّلة، أو {اسم:true}
+try { var _sv = localStorage.getItem('sn-sel'); if (_sv) SEL = JSON.parse(_sv); } catch (e) {}
 var D = null;
 var S = { tab: 'overview', cat: '', st: '', q: '', comp: '', sort: 'priority', page: 0, per: 40, aType: '', aUnread: false, alerts: null, drawer: null };
 var pollTimer = null;
@@ -68,10 +70,12 @@ function load(force) {
 }
 function prep() {
   D.byKey = {}; D.products.forEach(function (p) {
+    p.st0 = p.st;
     D.byKey[p.sku] = p;
     p.hay = (p.n + ' ' + p.sku + ' ' + p.brand + ' ' + p.cat).toLowerCase();
   });
   D.active = D.competitors.filter(function (c) { return c.active; });
+  derive(); updateCompareBtn();
   if (D.labels) Object.keys(D.labels).forEach(function (k) { if (ST[k] && D.labels[k]) ST[k].l = D.labels[k]; });
 }
 function showErr(m) {
@@ -102,6 +106,82 @@ function poll() {
     updateProgress(p);
     if (p.status !== 'running' && was) { toast('Check finished · الفحص خلص'); load(true); }
   });
+}
+
+
+/* ============================== derive: المقارنة حسب الشركات المختارة ============================== */
+function selOn(name) { return !SEL || SEL[name]; }
+function visibleComps() { return D.active.filter(function (c) { return selOn(c.name); }); }
+function derive() {
+  var same = D.samePct != null ? D.samePct : 0.5, sum = { only_us: 0, same: 0, cheaper: 0, pricier: 0, not_checked: 0, needs_help: 0, total: 0 }, byCat = {}, withData = 0;
+  D.products.forEach(function (p) {
+    var live = [], priced = 0, any = 0;
+    Object.keys(p.cells).forEach(function (n) {
+      if (!selOn(n)) return;
+      var c = p.cells[n]; any++;
+      if (c.low || c.p == null) return;
+      priced++;
+      if (c.s) live.push({ n: n, p: c.p, u: c.u });
+    });
+    var min = null, minBy = [], below = null, above = null;
+    live.forEach(function (o) {
+      if (min == null || o.p < min) { min = o.p; minBy = [o.n]; } else if (o.p === min) minBy.push(o.n);
+      if (o.p < p.p && (!below || o.p > below.p)) below = o;     // أقرب واحد أرخص مننا
+      if (o.p > p.p && (!above || o.p < above.p)) above = o;     // أقرب واحد أغلى مننا
+    });
+    p.min = min; p.minBy = minBy; p.below = below; p.above = above;
+    if (!any) { p.st = 'not_checked'; p.gap = null; }
+    else if (!priced) { p.st = (p.st0 === 'needs_help') ? 'needs_help' : 'not_checked'; p.gap = null; }
+    else if (min == null) { p.st = 'only_us'; p.gap = null; }
+    else {
+      p.gap = (p.p - min) / min * 100;
+      p.st = Math.abs(p.gap) <= same ? 'same' : (p.gap < 0 ? 'cheaper' : 'pricier');
+    }
+    p.grp = min != null ? 0 : (priced ? 1 : 2);
+    sum[p.st]++; sum.total++;
+    if (p.grp < 2) withData++;
+    var b = byCat[p.top] = byCat[p.top] || { cat: p.top, only_us: 0, same: 0, cheaper: 0, pricier: 0, other: 0 };
+    if (p.st === 'not_checked' || p.st === 'needs_help') b.other++; else b[p.st]++;
+  });
+  sum.coveragePct = sum.total ? Math.round(withData / sum.total * 100) : 0; sum.withData = withData;
+  D.summary = sum;
+  D.byCategory = Object.keys(byCat).map(function (k) { return byCat[k]; }).sort(function (a, b) { return (b.pricier + b.cheaper + b.same + b.only_us) - (a.pricier + a.cheaper + a.same + a.only_us); });
+  D.top = D.products.filter(function (p) { return p.st === 'pricier'; }).sort(function (a, b) { return b.gap - a.gap; }).slice(0, 10).map(function (p) {
+    var c = p.minBy[0] ? p.cells[p.minBy[0]] : null;
+    return { sku: p.sku, n: p.n, img: p.img, comp: p.minBy[0], cp: p.min, p: p.p, gap: p.gap, u: c ? c.u : '' };
+  });
+}
+function nearCell(o, p, kind) {
+  if (!o) return '<span class="dash">—</span>';
+  var d = (o.p - p.p) / p.p * 100;
+  return '<a class="cp near ' + kind + '" href="' + esc(o.u) + '" target="_blank" rel="noopener" title="' + esc(o.n) + ' — ' + fmt(o.p) + ' EGP"><b>' + esc(o.n) + '</b> <span class="num">' + fmt(o.p) + '</span> ' + ICON.ext + '</a><span class="sub2 num ' + (d < 0 ? 'down' : 'up') + '">' + pct(d) + ' vs us</span>';
+}
+function openCompareModal() {
+  function chk(c) { return '<label class="tog" style="display:flex;padding:7px 4px;border-bottom:1px solid var(--line2)"><input type="checkbox" data-cmp="' + esc(c.name) + '"' + (selOn(c.name) ? ' checked' : '') + '> <b style="font-weight:600">' + esc(c.name) + '</b> <span class="sub2" style="margin-inline-start:auto;max-width:200px">' + esc(c.categories) + '</span></label>'; }
+  $('#modal').innerHTML = '<h3>Compare against</h3><p>Choose which companies count in the comparison and in the closest-link columns.<br>' + ar('اختار الشركات اللي عاوز تتقارن بيها — الحالات والأقرب ليك بتتحسب عليهم بس') + '</p>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><button class="btn sm" data-preset="all">All</button><button class="btn sm" data-preset="spec">Specialists only</button><button class="btn sm" data-preset="mkt">Marketplaces only</button><button class="btn sm" data-preset="none">Clear</button></div>' +
+    '<div style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:2px 12px">' + D.active.map(chk).join('') + '</div>' +
+    '<div class="mf"><button class="btn" id="mCancel" type="button">Cancel</button><button class="btn primary" id="mSave" type="button">Apply</button></div>';
+  openModal(); $('#mCancel').onclick = closeModal;
+  var isMkt = function (c) { return /(^|,)\s*all\s*(,|$)/i.test(c.categories); };
+  var setAll = function (fn) { $$('[data-cmp]').forEach(function (i) { var c = D.active.filter(function (x) { return x.name === i.dataset.cmp; })[0]; i.checked = fn(c); }); };
+  $$('[data-preset]').forEach(function (b) { b.onclick = function () {
+    var k = b.dataset.preset;
+    setAll(k === 'all' ? function () { return true; } : k === 'none' ? function () { return false; } : k === 'mkt' ? isMkt : function (c) { return !isMkt(c); });
+  }; });
+  $('#mSave').onclick = function () {
+    var on = {}, n = 0; $$('[data-cmp]').forEach(function (i) { if (i.checked) { on[i.dataset.cmp] = true; n++; } });
+    if (!n) { toast('Pick at least one company · اختار شركة على الأقل', true); return; }
+    SEL = n === D.active.length ? null : on;
+    try { if (SEL) localStorage.setItem('sn-sel', JSON.stringify(SEL)); else localStorage.removeItem('sn-sel'); } catch (e) {}
+    closeModal(); derive(); updateCompareBtn(); render(); toast('Applied · اتطبق');
+  };
+}
+function updateCompareBtn() {
+  var b = $('#btnCompare'); if (!b || !D) return;
+  var n = SEL ? Object.keys(SEL).filter(function (k) { return D.active.some(function (c) { return c.name === k; }); }).length : D.active.length;
+  $('#btnCompareTxt').textContent = SEL ? n + ' of ' + D.active.length : 'All companies';
+  b.classList.toggle('on', !!SEL);
 }
 
 /* ============================== charts ============================== */
@@ -205,7 +285,7 @@ function renderOverview() {
   h += '<div class="grid g-two"><section class="card"><div class="card-h"><h2>Biggest gaps — competitors cheaper than us</h2><span class="sub">Top 10 · ' + ar('أكبر الفجوات') + '</span></div><ul class="gaps">';
   if (!D.top.length) h += '<li class="empty">No competitor is cheaper than us right now 👌<br>' + ar('مفيش منافس أرخص مننا حاليًا') + '</li>';
   D.top.forEach(function (t, i) {
-    h += '<li class="gap-i" data-open="' + esc(t.sku) + '"><span class="rk num">' + (i + 1) + '</span><div class="thumb" style="background-image:url(' + esc(t.img) + ')"></div><div class="m"><b title="' + esc(t.n) + '">' + esc(t.n) + '</b><span>' + esc(t.comp) + ' · <span class="num">' + fmt(t.cp) + '</span> vs us <span class="num">' + fmt(t.p) + '</span></span></div><div class="r"><div class="gap-pct num">' + pct(t.gap) + '</div><div class="num" style="font-size:12px;color:var(--faint)">+' + fmt(t.p - t.cp) + ' EGP</div></div></li>';
+    h += '<li class="gap-i" data-open="' + esc(t.sku) + '"><span class="rk num">' + (i + 1) + '</span><div class="thumb" style="background-image:url(' + esc(t.img) + ')"></div><div class="m"><b title="' + esc(t.n) + '">' + esc(t.n) + '</b><span>' + (t.u ? '<a href="' + esc(t.u) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' + esc(t.comp) + ' ↗</a>' : esc(t.comp)) + ' · <span class="num">' + fmt(t.cp) + '</span> vs us <span class="num">' + fmt(t.p) + '</span></span></div><div class="r"><div class="gap-pct num">' + pct(t.gap) + '</div><div class="num" style="font-size:12px;color:var(--faint)">+' + fmt(t.p - t.cp) + ' EGP</div></div></li>';
   });
   h += '</ul></section><div class="grid" style="align-content:start">' +
     '<section class="card"><div class="card-h"><h2>Price position by category</h2><span class="sub">' + ar('اضغط على الفئة لفتحها') + '</span></div>' + stackedBars(D.byCategory) + '</section></div></div>';
@@ -258,18 +338,19 @@ function renderTable() {
   var rows = filtered(), per = S.per, pages = Math.max(1, Math.ceil(rows.length / per));
   if (S.page >= pages) S.page = pages - 1;
   var slice = rows.slice(S.page * per, S.page * per + per);
-  var comps = D.active;
-  var h = '<div class="tbl-wrap"><table class="t"><thead><tr><th class="c-prod">Product</th><th>Our price</th><th>Gap</th><th>Status</th>' +
+  var comps = visibleComps();
+  var h = '<div class="tbl-wrap"><table class="t"><thead><tr><th class="c-prod">Product</th><th>Our price</th><th>Gap</th><th>Status</th><th title="Closest competitor cheaper than us — أقرب منافس أرخص مننا">Closest cheaper ↓</th><th title="Closest competitor pricier than us — أقرب منافس أغلى مننا">Closest pricier ↑</th>' +
     comps.map(function (c) { return '<th title="' + esc(c.categories) + '">' + esc(c.name) + '</th>'; }).join('') + '<th></th></tr></thead><tbody>';
-  if (!slice.length) h += '<tr><td colspan="' + (5 + comps.length) + '" class="empty">No products match these filters · ' + ar('مفيش منتجات مطابقة') + '</td></tr>';
+  if (!slice.length) h += '<tr><td colspan="' + (7 + comps.length) + '" class="empty">No products match these filters · ' + ar('مفيش منتجات مطابقة') + '</td></tr>';
   var lastGrp = -1, GL = ['Competitor in stock · منافس متوفر', 'Competitors out of stock · المنافس نافد', 'No competitor price yet · لسه مفيش سعر منافس'];
   slice.forEach(function (p) {
-    if (S.sort === 'priority' && p.grp !== lastGrp) { h += '<tr class="grp-row"><td colspan="' + (5 + comps.length) + '">' + GL[p.grp] + '</td></tr>'; lastGrp = p.grp; }
+    if (S.sort === 'priority' && p.grp !== lastGrp) { h += '<tr class="grp-row"><td colspan="' + (7 + comps.length) + '">' + GL[p.grp] + '</td></tr>'; lastGrp = p.grp; }
     var gcls = p.gap == null ? '' : (p.st === 'same' ? 'eq' : (p.gap > 0 ? 'up' : 'down'));
     h += '<tr data-sku="' + esc(p.sku) + '"><td class="c-prod"><div class="prod" data-open="' + esc(p.sku) + '"><div class="thumb" style="background-image:url(' + esc(p.img) + ')"></div><div class="tt"><b title="' + esc(p.n) + '">' + esc(p.n) + '</b><span>' + esc(p.sku) + (p.stock === 'preorder' ? ' · Pre-order' : '') + '</span></div></div></td>' +
       '<td><span class="price num">' + fmt(p.p) + '</span></td>' +
       '<td>' + (p.gap == null ? '<span class="dash">—</span>' : '<span class="gp num ' + gcls + '">' + pct(p.gap) + '</span>') + '</td>' +
-      '<td><span class="pill ' + p.st + '">' + ST[p.st].l + '</span></td>';
+      '<td><span class="pill ' + p.st + '">' + ST[p.st].l + '</span></td>' +
+      '<td class="cell-l">' + nearCell(p.below, p, 'below') + '</td><td class="cell-l">' + nearCell(p.above, p, 'above') + '</td>';
     comps.forEach(function (c) { h += '<td>' + cell(p, c) + '</td>'; });
     h += '<td><div class="row-act"><button class="btn sm ghost" data-link="' + esc(p.sku) + '" title="Add / edit link & note — ضيف أو عدّل لينك وملاحظة">' + ICON.link + '<span class="hide-s">Link</span></button><button class="btn sm ghost" data-upd="' + esc(p.sku) + '" title="Re-check now — افحص المنتج ده دلوقتي"><span class="spin"></span>' + ICON.refresh + '</button></div></td></tr>';
   });
@@ -387,16 +468,16 @@ function renderAlerts() {
 
 /* ============================== CSV ============================== */
 function exportCsv() {
-  var rows = filtered(), comps = D.active;
+  var rows = filtered(), comps = visibleComps();
   var q = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  var lines = [['SKU', 'Name', 'Category', 'Our price', 'Status', 'Gap %', 'Cheapest in stock', 'Cheapest competitor'].concat(comps.map(function (c) { return c.name; })).map(q).join(',')];
+  var lines = [['SKU', 'Name', 'Category', 'Our price', 'Status', 'Gap %', 'Cheapest in stock', 'Cheapest competitor', 'Closest cheaper', 'Closest cheaper price', 'Closest cheaper link', 'Closest pricier', 'Closest pricier price', 'Closest pricier link'].concat(comps.map(function (c) { return c.name; })).map(q).join(',')];
   rows.forEach(function (p) {
-    lines.push([p.sku, p.n, p.cat, p.p, ST[p.st].l, p.gap == null ? '' : p.gap.toFixed(1), p.min == null ? '' : p.min, p.minBy.join(' / ')].concat(comps.map(function (c) {
+    lines.push([p.sku, p.n, p.cat, p.p, ST[p.st].l, p.gap == null ? '' : p.gap.toFixed(1), p.min == null ? '' : p.min, p.minBy.join(' / '), p.below ? p.below.n : '', p.below ? p.below.p : '', p.below ? p.below.u : '', p.above ? p.above.n : '', p.above ? p.above.p : '', p.above ? p.above.u : ''].concat(comps.map(function (c) {
       var x = p.cells[c.name]; return !x || x.p == null ? '' : x.p + (x.s ? '' : ' (OOS)');
     })).map(q).join(','));
   });
   var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'priceradar-' + new Date().toISOString().slice(0, 10) + '.csv';
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'sales-navigator-' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   toast('Exported ' + rows.length + ' products · اتصدّر');
 }
@@ -534,6 +615,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key === '/' && !/input|select|textarea/i.test(document.activeElement.tagName)) { if (S.tab !== 'products') go('products'); var q = $('#gsearch'); if (q) { e.preventDefault(); q.focus(); } }
 });
 
+$('#btnCompare').onclick = openCompareModal;
 $('#btnSyncSheet').onclick = function () {
   var b = this; if (b.disabled) return; b.disabled = true; b.classList.add('busy');
   run('syncSheetChanges', [], function (r) {

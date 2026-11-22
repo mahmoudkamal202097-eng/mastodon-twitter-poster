@@ -32,7 +32,7 @@ function loadInputs_() {
   resetSettingsCache_();
   return {
     products: readRows_(SHEET.PRODUCTS), competitors: readRows_(SHEET.COMPETITORS), matches: readRows_(SHEET.MATCHES),
-    prices: readRows_(SHEET.PRICES), history: readRows_(SHEET.HISTORY), alerts: readRows_(SHEET.ALERTS), overrides: readRows_(SHEET.OVERRIDES),
+    prices: readRows_(SHEET.PRICES), history: readRowsTail_(SHEET.HISTORY, 45000), alerts: readRows_(SHEET.ALERTS), overrides: readRows_(SHEET.OVERRIDES),
     samePct: getNum_('same_price_threshold_pct', 0.5), minConf: getNum_('match_min_confidence', 0.8), now: Date.now()
   };
 }
@@ -61,7 +61,7 @@ function getDashboard(force) {
 
 /** تاريخ منتج واحد (للـ Drawer) */
 function getProductHistory(sku) {
-  return buildProductHistory_(readRows_(SHEET.HISTORY), sku, 90);
+  return buildProductHistory_(readRowsTail_(SHEET.HISTORY, 80000), sku, 90);
 }
 
 /* ======================= كتابة من الداشبورد ======================= */
