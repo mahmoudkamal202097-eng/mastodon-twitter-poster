@@ -5,10 +5,22 @@
  */
 
 function doGet() {
+  ensureReady_();
   return HtmlService.createTemplateFromFile('Dashboard').evaluate()
     .setTitle('PriceRadar — Geeks Store')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+/**
+ * أول مرة الداشبورد تتفتح: بتظبط الـ Triggers لوحدها، ولو Products فاضي بتبدأ أول فحص في الخلفية.
+ * (يعني مش لازم تشغّل setup() ولا installTriggers() بإيدك.)
+ */
+function ensureReady_() {
+  try {
+    const p = PropertiesService.getScriptProperties();
+    if (!p.getProperty('TRIGGERS_OK')) { installTriggers(); p.setProperty('TRIGGERS_OK', '1'); }
+    if (sh_(SHEET.PRODUCTS).getLastRow() < 2 && getState_().status !== 'running') startCheck();
+  } catch (e) { log_('ERROR', 'ensureReady_', e.message); }
 }
 function include(name) { return HtmlService.createHtmlOutputFromFile(name).getContent(); }
 

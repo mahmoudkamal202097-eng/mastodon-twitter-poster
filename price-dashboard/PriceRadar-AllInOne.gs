@@ -1,7 +1,6 @@
 /**
  * PriceRadar — نسخة الملف الواحد (All-in-one)
- * الصق الملف ده كله في Code.gs في مشروع Apps Script جديد، واستبدل appsscript.json بالمرفق.
- * الداشبورد (HTML) متضمّنة تحت في PAGE_HTML — مفيش ملفات HTML تانية محتاجة.
+ * الصق الملف ده كله في Code.gs (Ctrl+A ثم Ctrl+V). الداشبورد جواه، والشيت متربط.
  */
 // ═══════════════ Config.gs ═══════════════
 /**
@@ -21,6 +20,9 @@ const APP = {
   GEEKS: 'GEEKS',            // اسم صفوفنا في Price_History
   LOCK_WAIT_MS: 20000
 };
+
+/** الشيت اللي اتجهّز لك — الكود بيشتغل عليه مباشرة (لو فاضي بيدوّر على Script Property أو بينشئ شيت جديد) */
+const SHEET_ID = '17qR_ERAIW101L5Z7wF0LFDjBOi8D2GA_hp3TsF20mF8';
 
 const SHEET = {
   PRODUCTS: 'Products', COMPETITORS: 'Competitors', MATCHES: 'Matches', PRICES: 'Prices',
@@ -79,6 +81,7 @@ function resetSettingsCache_() { _settingsCache = null; }
 /* ======================= Spreadsheet helpers ======================= */
 
 function ssId_() {
+  if (SHEET_ID) return SHEET_ID;
   const p = PropertiesService.getScriptProperties();
   let id = p.getProperty('SSID');
   if (id) return id;
@@ -1431,10 +1434,22 @@ function installTriggers() {
  */
 
 function doGet() {
+  ensureReady_();
   return HtmlService.createHtmlOutput(PAGE_HTML)
     .setTitle('PriceRadar — Geeks Store')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+/**
+ * أول مرة الداشبورد تتفتح: بتظبط الـ Triggers لوحدها، ولو Products فاضي بتبدأ أول فحص في الخلفية.
+ * (يعني مش لازم تشغّل setup() ولا installTriggers() بإيدك.)
+ */
+function ensureReady_() {
+  try {
+    const p = PropertiesService.getScriptProperties();
+    if (!p.getProperty('TRIGGERS_OK')) { installTriggers(); p.setProperty('TRIGGERS_OK', '1'); }
+    if (sh_(SHEET.PRODUCTS).getLastRow() < 2 && getState_().status !== 'running') startCheck();
+  } catch (e) { log_('ERROR', 'ensureReady_', e.message); }
 }
 function include(name) { return HtmlService.createHtmlOutputFromFile(name).getContent(); }
 

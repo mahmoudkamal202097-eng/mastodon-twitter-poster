@@ -16,6 +16,9 @@ const APP = {
   LOCK_WAIT_MS: 20000
 };
 
+/** الشيت اللي اتجهّز لك — الكود بيشتغل عليه مباشرة (لو فاضي بيدوّر على Script Property أو بينشئ شيت جديد) */
+const SHEET_ID = '17qR_ERAIW101L5Z7wF0LFDjBOi8D2GA_hp3TsF20mF8';
+
 const SHEET = {
   PRODUCTS: 'Products', COMPETITORS: 'Competitors', MATCHES: 'Matches', PRICES: 'Prices',
   HISTORY: 'Price_History', ALERTS: 'Alerts', SETTINGS: 'Settings', LOGS: 'Logs'
@@ -73,6 +76,7 @@ function resetSettingsCache_() { _settingsCache = null; }
 /* ======================= Spreadsheet helpers ======================= */
 
 function ssId_() {
+  if (SHEET_ID) return SHEET_ID;
   const p = PropertiesService.getScriptProperties();
   let id = p.getProperty('SSID');
   if (id) return id;
