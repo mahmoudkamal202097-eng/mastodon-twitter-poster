@@ -20,8 +20,29 @@ function hasToken_(joined, tok) {
   return !!t && (' ' + joined + ' ').indexOf(' ' + t + ' ') > -1;
 }
 
+/** كود آبل (MC6T4LL/A أو MC6T4AB/A) → أول 5 حروف (MC6T4) عشان يتطابق مع أي منطقة */
+function appleCode_(sku) {
+  const m = /^([A-Z0-9]{5})[A-Z]{1,2}\/[A-Z]$/i.exec(String(sku || '').trim());
+  return m ? m[1].toUpperCase() : '';
+}
+/** مواصفات الرام/التخزين في النص: 16GB, 512GB, 1TB */
+function memSpecs_(s) {
+  const o = {};
+  (String(s || '').toUpperCase().match(/\b\d+\s?(GB|TB)\b/g) || []).forEach(x => o[x.replace(/\s/g, '')] = 1);
+  return Object.keys(o).sort().join(',');
+}
+
+/** شريحة آبل: M5 / M5 PRO / M5 MAX / A18 PRO (لمنع خلط M4 بـ M5) */
+function chip_(s) {
+  const j = normWords_(s).join(' ');
+  const a = /\bM[1-9]\b(?: (?:PRO|MAX|ULTRA))?/.exec(j) || /\bA\d{2} PRO\b/.exec(j);
+  return a ? a[0] : '';
+}
+
 /** أفضل model token للمنتج: SKU أولاً، وبعدين أول كلمة فيها حروف+أرقام */
 function modelToken_(name, sku) {
+  const ac = appleCode_(sku);
+  if (ac) return ac;
   const bad = /^\d+(HZ|GB|TB|W|MM|INCH|MS|MP|AH|MAH|CM|KG|K)$/;
   const fromSku = String(sku || '').trim();
   if (fromSku.length >= 4) return fromSku.toUpperCase();
@@ -45,7 +66,14 @@ function jaccard_(a, b) {
 /** ثقة المطابقة 0..1 بين منتجنا وعنوان مرشّح */
 function matchConfidence_(ourName, ourToken, candTitle) {
   const j = jaccard_(tokenSet_(ourName), tokenSet_(candTitle));
-  const hit = ourToken && hasToken_(normWords_(candTitle).join(' '), ourToken);
+  const candJoined = normWords_(candTitle).join(' ');
+  let hit = ourToken && hasToken_(candJoined, ourToken);
+  // كود آبل: المنافس بيكتبه بلاحقة منطقة (MC6T4AB/A) → نقبل الكلمة اللي بتبدأ بالكود
+  if (!hit && ourToken && /^[A-Z0-9]{5}$/.test(ourToken) && /\d/.test(ourToken) && /[A-Z]/.test(ourToken)) hit = candJoined.split(' ').some(w => w.indexOf(ourToken) === 0 && w.length <= 8);
+  // مواصفات مختلفة (رام/تخزين) = جهاز تاني
+  const so = memSpecs_(ourName), sc = memSpecs_(candTitle);
+  const chipO = chip_(ourName), chipC = chip_(candTitle);
+  const specPenal = (so && sc && so !== sc ? 0.3 : 0) + (chipO && chipC && chipO !== chipC ? 0.4 : 0);
   if (hit) {
     // لو العنوان فيه لاحقة موديل مختلفة (XG27UCG ≠ XG27UCG-W) نخصم
     const T = normWords_(ourToken).join(' ');
@@ -53,9 +81,11 @@ function matchConfidence_(ourName, ourToken, candTitle) {
     const after = new RegExp(' ' + T + ' ([A-Z]{1,2}) ').exec(ct);
     const ourN = ' ' + normWords_(ourName).join(' ') + ' ';
     const penal = after && ourN.indexOf(' ' + T + ' ' + after[1] + ' ') === -1 ? 0.2 : 0;
-    return Math.max(0, Math.min(1, 0.7 + 0.3 * Math.min(1, j * 2) - penal));
+    return Math.max(0, Math.min(1, 0.7 + 0.3 * Math.min(1, j * 2) - penal - specPenal));
   }
-  return Math.min(0.79, j * 0.9);
+  // من غير كود موديل: نقبل لو الرام/التخزين اتطابقوا بالظبط والشريحة واحدة والاسم قريب
+  if (so && so === sc && specPenal === 0 && j >= 0.6) return Math.min(0.9, 0.55 + j * 0.5);
+  return Math.max(0, Math.min(0.79, j * 0.9 - specPenal));
 }
 
 /* ======================= نطاق الفئات ======================= */

@@ -40,7 +40,8 @@ function syncOurProducts() {
   items.forEach(it => {
     if (it.stock !== 'in_stock' && it.stock !== 'preorder') return;   // Out of stock = مش بيتراقب
     if (!(it.price > 0)) return;
-    const sku = String(it.sku || ('P' + it.id));
+    let sku = String(it.sku || ('V' + it.id));
+    if (seen[sku]) sku = 'V' + it.id;          // SKU مكرر بين مواصفتين → نفرّقهم بالـ id
     if (seen[sku]) return; seen[sku] = 1;
     const o = old[sku];
     rows.push([sku, it.name, it.category, it.price, it.stock, it.image || '', it.url, now, it.brand || '', it.id, o ? o.Discovered_At : '']);
@@ -56,29 +57,59 @@ function syncOurProducts() {
 }
 
 /* ---------- WooCommerce (Store API) ---------- */
+/**
+ * المنتجات المتغيّرة (Variable: ماك بوك، ماك ستوديو، إلخ) بتتحوّل لـ "منتج لكل مواصفة":
+ *   "Apple MacBook Air M5 — 13″ · 16GB · 512GB · Sky Blue"
+ * بنراقب بس المواصفات اللي ليها سعر > 0 (التركيبات غير المتاحة سعرها 0 وبتتجاهل).
+ * الـ SKU = SKU المواصفة (كود آبل زي MC6T4LL/A) أو "V"+id لو فاضي.
+ */
 function fetchWooItems_(base) {
+  const parents = wooPaged_(base + '/wp-json/wc/store/v1/products?per_page=100');
+  const vars = wooPaged_(base + '/wp-json/wc/store/v1/products?type=variation&per_page=100');
+  const byParent = {};
+  vars.forEach(v => { (byParent[v.parent] = byParent[v.parent] || []).push(v); });
+
   const out = [];
+  parents.forEach(p => {
+    const brand = titleCase_(p.brands && p.brands[0] ? decodeHtml_(p.brands[0].name) : '');
+    const cats = (p.categories || []).map(c => decodeHtml_(c.name)).filter(n => !/^uncategorized$/i.test(n));
+    const image = (p.images && p.images[0] && (p.images[0].thumbnail || p.images[0].src)) || '';
+    const base0 = { brand: brand, category: cats.join(' / '), image: image };
+    const mine = (byParent[p.id] || []).filter(v => wooPrice_(v) > 0);
+    if (mine.length) {
+      mine.forEach(v => out.push(Object.assign({}, base0, {
+        id: v.id, sku: v.sku || '', name: decodeHtml_(p.name) + ' — ' + specLabel_(v.variation),
+        price: wooPrice_(v), stock: wooStock_(v), url: v.permalink || p.permalink,
+        image: (v.images && v.images[0] && (v.images[0].thumbnail || v.images[0].src)) || image
+      })));
+    } else {
+      out.push(Object.assign({}, base0, { id: p.id, sku: p.sku || '', name: decodeHtml_(p.name), price: wooPrice_(p), stock: wooStock_(p), url: p.permalink }));
+    }
+  });
+  return out;
+}
+
+function wooPaged_(url) {
+  const all = [];
   let page = 1, total = 1;
-  while (page <= total) {
-    const res = UrlFetchApp.fetch(base + '/wp-json/wc/store/v1/products?per_page=100&page=' + page, { muteHttpExceptions: true, headers: OUR_UA });
+  while (page <= total && page <= 30) {
+    const res = UrlFetchApp.fetch(url + '&page=' + page, { muteHttpExceptions: true, headers: OUR_UA });
     if (res.getResponseCode() !== 200) throw new Error('Woo Store API رجّع HTTP ' + res.getResponseCode());
     const h = res.getHeaders();
     total = Number(h['X-WP-TotalPages'] || h['x-wp-totalpages'] || 1);
-    JSON.parse(res.getContentText()).forEach(p => {
-      const pr = p.prices || {};
-      const minor = Number(pr.currency_minor_unit || 0);
-      const price = pr.price ? Number(pr.price) / Math.pow(10, minor) : 0;
-      const cats = (p.categories || []).map(c => decodeHtml_(c.name)).filter(n => !/^uncategorized$/i.test(n));
-      out.push({
-        id: p.id, sku: p.sku || '', name: decodeHtml_(p.name), category: cats.join(' / '),
-        brand: titleCase_(p.brands && p.brands[0] ? decodeHtml_(p.brands[0].name) : ''),
-        price: price, stock: p.is_on_backorder ? 'preorder' : (p.is_in_stock ? 'in_stock' : 'out'),
-        image: (p.images && p.images[0] && (p.images[0].thumbnail || p.images[0].src)) || '', url: p.permalink
-      });
-    });
+    JSON.parse(res.getContentText()).forEach(x => all.push(x));
     page++;
   }
-  return out;
+  return all;
+}
+function wooPrice_(p) {
+  const pr = p.prices || {};
+  return pr.price ? Number(pr.price) / Math.pow(10, Number(pr.currency_minor_unit || 0)) : 0;
+}
+function wooStock_(p) { return p.is_on_backorder ? 'preorder' : (p.is_in_stock ? 'in_stock' : 'out'); }
+/** "Display Size: 14″, CPU: M5 Pro, Memory: 24GB" → "14″ · M5 Pro · 24GB" */
+function specLabel_(v) {
+  return decodeHtml_(v || '').split(', ').map(s => s.indexOf(':') > -1 ? s.split(':').slice(1).join(':').trim() : s.trim()).filter(Boolean).join(' · ');
 }
 
 /* ---------- Shopify (/products.json) ---------- */
