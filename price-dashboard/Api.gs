@@ -32,7 +32,7 @@ function loadInputs_() {
   resetSettingsCache_();
   return {
     products: readRows_(SHEET.PRODUCTS), competitors: readRows_(SHEET.COMPETITORS), matches: readRows_(SHEET.MATCHES),
-    prices: readRows_(SHEET.PRICES), history: readRows_(SHEET.HISTORY), alerts: readRows_(SHEET.ALERTS),
+    prices: readRows_(SHEET.PRICES), history: readRows_(SHEET.HISTORY), alerts: readRows_(SHEET.ALERTS), overrides: readRows_(SHEET.OVERRIDES),
     samePct: getNum_('same_price_threshold_pct', 0.5), minConf: getNum_('match_min_confidence', 0.8), now: Date.now()
   };
 }
@@ -46,8 +46,16 @@ function getDashboard(force) {
     cachePut_(APP.CACHE_KEY, d);
   }
   d.progress = getProgress();
+  try { d.sheetUrl = ss_().getUrl(); } catch (e) { d.sheetUrl = ''; }
   d.unread = readRows_(SHEET.ALERTS).filter(a => !bool_(a.Read)).length;
-  d.settings = { same: getNum_('same_price_threshold_pct', 0.5), gap: getNum_('alert_gap_pct', 3), hours: getSetting_('refresh_hours') };
+  resetSettingsCache_();
+  d.settings = {
+    same: getNum_('same_price_threshold_pct', 0.5), gap: getNum_('alert_gap_pct', 3), change: getNum_('alert_change_pct', 2),
+    hours: getSetting_('refresh_hours'), syncEvery: getNum_('product_sync_every_hours', 6), fcSet: String(getSetting_('firecrawl_api_key') || '').trim().length > 10,
+    email: getSetting_('email_digest_to') || ''
+  };
+  d.labels = {};
+  ['only_us', 'same', 'cheaper', 'pricier', 'not_checked', 'needs_help'].forEach(k => d.labels[k] = getSetting_('label_' + k));
   return d;
 }
 
@@ -154,9 +162,114 @@ function saveSettings(obj) {
   });
   if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows);
   resetSettingsCache_(); clearCache_();
+  if (obj && (obj.refresh_hours != null || obj.product_sync_every_hours != null || obj.email_digest_to != null || obj.digest_hour != null)) installTriggers();
   return true;
 }
 
 function runCheckNow() { return startCheck(); }
 function getAlertsApi(filter) { return getAlerts(filter); }
 function markAllAlertsRead(ids) { return markAlertsRead(ids); }
+
+
+/* ======================= تعديل من جوه الداشبورد ======================= */
+
+/** اسم عرض مخصص للمنتج (أو إخفاؤه) — بيتحفظ في تاب Overrides ومابيتمسحش مع المزامنة */
+function renameProduct(sku, name, hidden) {
+  sku = String(sku);
+  const sh = sh_(SHEET.OVERRIDES);
+  const ex = readRows_(SHEET.OVERRIDES).filter(o => String(o.SKU) === sku)[0];
+  const row = [sku, String(name || '').trim(), !!hidden, ex ? ex.Note : ''];
+  if (ex) sh.getRange(ex._row, 1, 1, 4).setValues([row]); else appendRows_(SHEET.OVERRIDES, [row]);
+  clearCache_();
+  return true;
+}
+
+/** تعديل منافس: الاسم/الموقع/الفئات/تفعيل — لو الاسم اتغيّر بيتحدّث في كل الشيتات */
+function saveCompetitor(oldName, name, website, categories, active) {
+  const c = readRows_(SHEET.COMPETITORS).filter(x => x.Competitor_Name === oldName)[0];
+  if (!c) throw new Error('المنافس مش موجود');
+  name = String(name || '').trim(); if (!name) throw new Error('اكتب اسم المنافس');
+  if (name !== oldName && readRows_(SHEET.COMPETITORS).some(x => String(x.Competitor_Name).toLowerCase() === name.toLowerCase())) throw new Error('فيه منافس بنفس الاسم');
+  const sh = sh_(SHEET.COMPETITORS);
+  const siteChanged = String(website).replace(/\/+$/, '') !== String(c.Website).replace(/\/+$/, '');
+  sh.getRange(c._row, 1, 1, 5).setValues([[name, String(website || c.Website).replace(/\/+$/, ''), String(categories || 'All'), siteChanged ? '' : c.Platform_Type, !!active]]);
+  if (name !== oldName) {
+    replaceColumn_(SHEET.MATCHES, 2, oldName, name); replaceColumn_(SHEET.PRICES, 2, oldName, name);
+    replaceColumn_(SHEET.HISTORY, 3, oldName, name); replaceColumn_(SHEET.ALERTS, 4, oldName, name);
+  }
+  clearCache_();
+  return true;
+}
+function replaceColumn_(sheetName, col, from, to) {
+  const sh = sh_(sheetName), last = sh.getLastRow();
+  if (last < 2) return;
+  const rng = sh.getRange(2, col, last - 1, 1), v = rng.getValues();
+  let n = 0; v.forEach(r => { if (r[0] === from) { r[0] = to; n++; } });
+  if (n) rng.setValues(v);
+}
+
+/**
+ * لصق لينكات بالجملة. كل سطر: المنتج (SKU أو جزء من الاسم) | المنافس | اللينك | ملاحظة (اختياري)
+ * الفاصل: Tab أو ; أو | أو فاصلة. اللينكات بتتسجل manual (محمية) وبتتفحص فورًا.
+ */
+function parseBulkLines_(text) {
+  return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map((l, i) => {
+    let parts = l.split('\t');
+    if (parts.length < 3) parts = l.split(/\s*[;|]\s*/);
+    if (parts.length < 3) parts = l.split(/\s*,\s*(?=(?:https?:|[^,]*,\s*https?:))/);
+    return { n: i + 1, raw: l, product: (parts[0] || '').trim(), competitor: (parts[1] || '').trim(), url: (parts[2] || '').trim(), note: (parts.slice(3).join(' ') || '').trim() };
+  });
+}
+
+function bulkImportLinks(text) {
+  const lines = parseBulkLines_(text);
+  if (!lines.length) throw new Error('الصق سطر واحد على الأقل');
+  const products = readRows_(SHEET.PRODUCTS), comps = readRows_(SHEET.COMPETITORS);
+  const matches = readRows_(SHEET.MATCHES);
+  const mIdx = {}; matches.forEach(m => mIdx[String(m.SKU) + '|' + m.Competitor] = m);
+  const sh = sh_(SHEET.MATCHES);
+  const report = { added: 0, updated: 0, errors: [] }, add = [];
+  lines.forEach(L => {
+    if (!/^https?:\/\//i.test(L.url)) { report.errors.push('سطر ' + L.n + ': اللينك لازم يبدأ بـ http'); return; }
+    const comp = comps.filter(c => String(c.Competitor_Name).toLowerCase() === L.competitor.toLowerCase())[0];
+    if (!comp) { report.errors.push('سطر ' + L.n + ': المنافس "' + L.competitor + '" مش موجود'); return; }
+    const q = L.product.toLowerCase();
+    let hit = products.filter(p => String(p.SKU).toLowerCase() === q);
+    if (!hit.length) {
+      const words = q.split(/\s+/).filter(Boolean);
+      hit = products.filter(p => { const h = (String(p.Name) + ' ' + p.SKU).toLowerCase(); return words.every(w => h.indexOf(w) > -1); });
+    }
+    if (hit.length !== 1) { report.errors.push('سطر ' + L.n + ': ' + (hit.length ? hit.length + ' منتجات مطابقة — اكتب SKU أدق' : 'مفيش منتج مطابق لـ "' + L.product + '"')); return; }
+    const key = String(hit[0].SKU) + '|' + comp.Competitor_Name, ex = mIdx[key];
+    const row = [String(hit[0].SKU), comp.Competitor_Name, L.url, 'manual', 1, L.note || (ex ? ex.Note : ''), '', ''];
+    if (ex) { sh.getRange(ex._row, 1, 1, 8).setValues([row]); report.updated++; }
+    else { add.push(row); mIdx[key] = { _row: -1 }; report.added++; }
+  });
+  if (add.length) appendRows_(SHEET.MATCHES, add);
+  clearCache_();
+  report.check = checkNewLinks_(40);
+  return report;
+}
+
+/** اللينكات اللي اتضافت/اتعدّلت (Competitor_URL ≠ Checked_URL) تتفحص دلوقتي (حد أقصى cap) */
+function checkNewLinks_(cap) {
+  const minConf = getNum_('match_min_confidence', 0.8);
+  const ctx = loadCtx_(false);
+  const pending = readRows_(SHEET.MATCHES).filter(m => ctx.products[String(m.SKU)] && ctx.comps[m.Competitor] && bool_(ctx.comps[m.Competitor].Active) &&
+    validMatch_(m, minConf) && String(m.Competitor_URL).trim() !== String(m.Checked_URL).trim());
+  const list = pending.slice(0, cap).map(m => ({ sku: String(m.SKU), competitor: m.Competitor, url: String(m.Competitor_URL).trim(), platform: ctx.comps[m.Competitor].Platform_Type, row: m._row }));
+  if (list.length) { applyChecks_(ctx, checkMatches_(list)); flushCtx_(ctx); }
+  return { pending: pending.length, checked: list.length, ok: ctx.done, failed: ctx.failed, remaining: Math.max(0, pending.length - list.length) };
+}
+
+/** زرار "Sync sheet": لو عدّلت لينكات/منافسين/أسماء في الشيت نفسه → ده بيقراهم فورًا ويفحص الجديد */
+function syncSheetChanges() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) throw new Error('فيه فحص شغال دلوقتي، جرّب بعد دقيقة');
+  try {
+    resetSettingsCache_(); clearCache_();
+    const r = checkNewLinks_(40);
+    clearCache_();
+    return r;
+  } finally { lock.releaseLock(); }
+}

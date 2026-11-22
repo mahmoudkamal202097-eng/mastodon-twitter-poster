@@ -125,7 +125,7 @@ function loadCtx_(seed) {
   readRows_(SHEET.COMPETITORS).forEach(c => { if (c.Competitor_Name) comps[c.Competitor_Name] = c; });
   readRows_(SHEET.PRICES).forEach(p => { priceRows.push([p.SKU, p.Competitor, p.Price, p.In_Stock, p.Checked_At]); priceMap[p.SKU + '|' + p.Competitor] = priceRows.length - 1; });
   return { products: products, comps: comps, priceRows: priceRows, priceMap: priceMap, seed: !!seed,
-    alerts: [], hist: [], checked: {}, logs: [], done: 0, failed: 0 };
+    alerts: [], hist: [], checked: {}, checkedUrl: {}, logs: [], done: 0, failed: 0 };
 }
 
 /** يطبّق نتائج checkMatches_ على السياق (من غير كتابة) */
@@ -142,7 +142,7 @@ function applyChecks_(ctx, results) {
       const row = [m.sku, m.competitor, r.price, r.inStock, now];
       if (idx != null) ctx.priceRows[idx] = row; else { ctx.priceRows.push(row); ctx.priceMap[key] = ctx.priceRows.length - 1; }
       ctx.hist.push([m.sku, m.competitor, r.price, r.inStock]);
-      if (m.row) ctx.checked[m.row] = now;
+      if (m.row) { ctx.checked[m.row] = now; ctx.checkedUrl[m.row] = m.url; }
       const p = ctx.products[m.sku];
       if (!ctx.seed && p) alertsFor_(m.sku, m.competitor, old, { price: r.price, inStock: r.inStock }, Number(p.Our_Price), now).forEach(a => ctx.alerts.push(a));
     } else if (r && r.price == null && !r.inStock && r.hasAvail && old) {
@@ -150,7 +150,7 @@ function applyChecks_(ctx, results) {
       ctx.done++;
       ctx.priceRows[idx] = [m.sku, m.competitor, old.price, false, now];
       ctx.hist.push([m.sku, m.competitor, old.price, false]);
-      if (m.row) ctx.checked[m.row] = now;
+      if (m.row) { ctx.checked[m.row] = now; ctx.checkedUrl[m.row] = m.url; }
     } else {
       ctx.failed++;
       ctx.logs.push([now, 'WARN', 'check', m.competitor + ' | ' + m.sku + ' | ' + (x.error || 'failed') + ' | ' + m.url.slice(0, 120)]);
@@ -167,9 +167,9 @@ function flushCtx_(ctx) {
   const rows = Object.keys(ctx.checked);
   if (rows.length) {
     const sh = sh_(SHEET.MATCHES), col = HEADERS.Matches.indexOf('Last_Checked') + 1, last = sh.getLastRow();
-    const rng = sh.getRange(2, col, last - 1, 1), vals = rng.getValues();
-    rows.forEach(r => { vals[Number(r) - 2][0] = ctx.checked[r]; });
-    rng.setValues(vals); ctx.checked = {};
+    const rng = sh.getRange(2, col, last - 1, 2), vals = rng.getValues();   // Last_Checked + Checked_URL
+    rows.forEach(r => { vals[Number(r) - 2][0] = ctx.checked[r]; vals[Number(r) - 2][1] = ctx.checkedUrl[r] || ''; });
+    rng.setValues(vals); ctx.checked = {}; ctx.checkedUrl = {};
   }
 }
 

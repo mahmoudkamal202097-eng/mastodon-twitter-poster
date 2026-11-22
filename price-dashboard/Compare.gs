@@ -34,6 +34,8 @@ function buildAggregates_(inp) {
   const comps = inp.competitors.filter(c => c.Competitor_Name);
   const activeComps = comps.filter(c => bool_(c.Active));
 
+  const ovBy = {};
+  (inp.overrides || []).forEach(o => { ovBy[String(o.SKU)] = o; });
   const matchBy = {}, priceBy = {};
   inp.matches.forEach(m => { matchBy[m.SKU + '|' + m.Competitor] = m; });
   inp.prices.forEach(p => { priceBy[p.SKU + '|' + p.Competitor] = p; });
@@ -42,8 +44,9 @@ function buildAggregates_(inp) {
   let lastChecked = 0;
   inp.prices.forEach(p => { const t = new Date(p.Checked_At).getTime(); if (t > lastChecked) lastChecked = t; });
 
-  const products = inp.products.map(p => {
+  const products = inp.products.filter(p => !(ovBy[String(p.SKU)] && bool_(ovBy[String(p.SKU)].Hidden))).map(p => {
     const sku = String(p.SKU);
+    const ov = ovBy[sku];
     const ours = Number(p.Our_Price);
     // نطاق الفئات + أي منافس ليه رابط يدوي (الروابط اليدوية ليها أولوية حتى برا النطاق)
     const scope = activeComps.filter(c => inScope_(p.Category, c.Categories) ||
@@ -76,7 +79,7 @@ function buildAggregates_(inp) {
     const top = topCategory_(p.Category);
     catCount[top] = (catCount[top] || 0) + 1;
     return {
-      sku: sku, n: String(p.Name), cat: String(p.Category), top: top, brand: String(p.Brand || ''), img: String(p.Image_URL || ''),
+      sku: sku, n: String((ov && ov.Display_Name) || p.Name), orig: String(p.Name), renamed: !!(ov && ov.Display_Name), cat: String(p.Category), top: top, brand: String(p.Brand || ''), img: String(p.Image_URL || ''),
       url: String(p.Product_URL || ''), p: ours, stock: String(p.Stock_Status), st: k.st, gap: k.gap, grp: grp,
       min: minLive, minBy: minBy, cells: cells, nScope: scope.length, needs: k.st === 'needs_help'
     };

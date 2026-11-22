@@ -21,18 +21,19 @@ const SHEET_ID = '17qR_ERAIW101L5Z7wF0LFDjBOi8D2GA_hp3TsF20mF8';
 
 const SHEET = {
   PRODUCTS: 'Products', COMPETITORS: 'Competitors', MATCHES: 'Matches', PRICES: 'Prices',
-  HISTORY: 'Price_History', ALERTS: 'Alerts', SETTINGS: 'Settings', LOGS: 'Logs'
+  HISTORY: 'Price_History', ALERTS: 'Alerts', SETTINGS: 'Settings', LOGS: 'Logs', OVERRIDES: 'Overrides'
 };
 
 const HEADERS = {
   Products:      ['SKU', 'Name', 'Category', 'Our_Price', 'Stock_Status', 'Image_URL', 'Product_URL', 'Last_Synced', 'Brand', 'Product_ID', 'Discovered_At'],
   Competitors:   ['Competitor_Name', 'Website', 'Categories', 'Platform_Type', 'Active'],
-  Matches:       ['SKU', 'Competitor', 'Competitor_URL', 'Match_Type', 'Match_Confidence', 'Note', 'Last_Checked'],
+  Matches:       ['SKU', 'Competitor', 'Competitor_URL', 'Match_Type', 'Match_Confidence', 'Note', 'Last_Checked', 'Checked_URL'],
   Prices:        ['SKU', 'Competitor', 'Price', 'In_Stock', 'Checked_At'],
   Price_History: ['Date', 'SKU', 'Competitor', 'Price', 'In_Stock'],
   Alerts:        ['Timestamp', 'Type', 'SKU', 'Competitor', 'Old', 'New', 'Gap_%', 'Read'],
   Settings:      ['Key', 'Value', 'Description'],
-  Logs:          ['Timestamp', 'Level', 'Function', 'Message']
+  Logs:          ['Timestamp', 'Level', 'Function', 'Message'],
+  Overrides:     ['SKU', 'Display_Name', 'Hidden', 'Note']
 };
 
 /** [المفتاح, القيمة الافتراضية, الوصف] */
@@ -52,6 +53,12 @@ const DEFAULT_SETTINGS = [
   ['history_keep_days', '180', 'مدة الاحتفاظ بـ Price_History'],
   ['firecrawl_api_key', '', 'مفتاح Firecrawl (اختياري) — بيقرأ المواقع اللي بتحجب Google أو بتعرض الأسعار بـ JavaScript'],
   ['firecrawl_max_per_run', '80', 'أقصى عدد صفحات عبر Firecrawl في التشغيل الواحد (بيتحكم في التكلفة)'],
+  ['label_only_us', "Only we have it", 'اسم الحالة في الداشبورد'],
+  ['label_same', 'Same price', 'اسم الحالة في الداشبورد'],
+  ['label_cheaper', "We're cheaper", 'اسم الحالة في الداشبورد'],
+  ['label_pricier', "We're pricier", 'اسم الحالة في الداشبورد'],
+  ['label_not_checked', 'Not checked yet', 'اسم الحالة في الداشبورد'],
+  ['label_needs_help', 'Needs your help', 'اسم الحالة في الداشبورد'],
   ['email_digest_to', '', 'إيميل الملخص اليومي (فاضي = معطّل)'],
   ['digest_hour', '9', 'ساعة إرسال الملخص (توقيت القاهرة)']
 ];
@@ -120,6 +127,7 @@ function readRows_(name) {
 function writeAll_(name, rows) {
   const sh = sh_(name);
   const w = HEADERS[name].length;
+  rows = rows.map(r => padRow_(r, w));
   const last = sh.getLastRow();
   if (last > 1) sh.getRange(2, 1, last - 1, w).clearContent();
   if (rows.length) {
@@ -128,10 +136,13 @@ function writeAll_(name, rows) {
   }
 }
 
+function padRow_(r, w) { r = r.slice(0, w); while (r.length < w) r.push(''); return r; }
+
 function appendRows_(name, rows) {
   if (!rows.length) return;
   const sh = sh_(name);
   const w = HEADERS[name].length;
+  rows = rows.map(r => padRow_(r, w));
   const start = sh.getLastRow() + 1;
   if (sh.getMaxRows() < start + rows.length - 1) sh.insertRowsAfter(sh.getMaxRows(), start + rows.length - sh.getMaxRows());
   sh.getRange(start, 1, rows.length, w).setValues(rows);

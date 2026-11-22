@@ -72,6 +72,7 @@ function prep() {
     p.hay = (p.n + ' ' + p.sku + ' ' + p.brand + ' ' + p.cat).toLowerCase();
   });
   D.active = D.competitors.filter(function (c) { return c.active; });
+  if (D.labels) Object.keys(D.labels).forEach(function (k) { if (ST[k] && D.labels[k]) ST[k].l = D.labels[k]; });
 }
 function showErr(m) {
   $('#app').innerHTML = '<div class="card errbox"><h2 style="margin:0 0 8px">Couldn’t load the data</h2><div style="color:var(--muted)">Make sure you ran <b>setup()</b> once from the Apps Script editor, and that the Web App is deployed.</div><code>' + esc(m) + '</code><button class="btn primary" id="retry" type="button">Try again</button></div>';
@@ -165,11 +166,12 @@ function historyChart(series, names) {
 
 /* ============================== render: shell ============================== */
 function render() {
-  var views = '<section class="view" id="v-overview"></section><section class="view" id="v-products"></section><section class="view" id="v-alerts"></section>';
+  var views = '<section class="view" id="v-overview"></section><section class="view" id="v-products"></section><section class="view" id="v-settings"></section><section class="view" id="v-alerts"></section>';
   if (!$('#v-overview')) $('#app').innerHTML = views;
   $$('.view').forEach(function (v) { v.hidden = v.id !== 'v-' + S.tab; });
   $$('.nav button').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.tab === S.tab ? 'true' : 'false'); });
   renderOverview(); renderProducts();
+  if (S.tab === 'settings') renderSettings();
   if (S.tab === 'alerts') renderAlerts();
 }
 function go(tab) { S.tab = tab; if (tab === 'alerts') S.alerts = null; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -288,7 +290,7 @@ function openDrawer(sku) {
     var la = a.p != null && a.s, lb = b.p != null && b.s;
     if (la !== lb) return la ? -1 : 1; return (a.p == null ? 1e12 : a.p) - (b.p == null ? 1e12 : b.p);
   });
-  var h = '<div class="dr-h"><div class="thumb" style="background-image:url(' + esc(p.img) + ')"></div><div style="flex:1;min-width:0"><h3>' + esc(p.n) + '</h3><div style="color:var(--faint);font-size:12.5px;margin-bottom:8px">' + esc(p.sku) + ' · ' + esc(p.cat) + '</div><span class="pill ' + p.st + '">' + ST[p.st].l + '</span></div><button class="btn icon ghost" id="drClose" type="button" aria-label="Close">' + ICON.close + '</button></div><div class="dr-b">' +
+  var h = '<div class="dr-h"><div class="thumb" style="background-image:url(' + esc(p.img) + ')"></div><div style="flex:1;min-width:0"><h3>' + esc(p.n) + ' <button class="edit-ico" data-rename="' + esc(p.sku) + '" title="Rename / hide — غيّر الاسم أو اخفي المنتج" aria-label="Rename">✎</button></h3><div style="color:var(--faint);font-size:12.5px;margin-bottom:8px">' + esc(p.sku) + ' · ' + esc(p.cat) + (p.renamed ? ' · <span title="Original name">' + esc(p.orig) + '</span>' : '') + '</div><span class="pill ' + p.st + '">' + ST[p.st].l + '</span></div><button class="btn icon ghost" id="drClose" type="button" aria-label="Close">' + ICON.close + '</button></div><div class="dr-b">' +
     '<div class="kvs"><div><small>Our price</small><b class="num">' + fmt(p.p) + '</b></div><div><small>Cheapest in stock</small><b class="num">' + fmt(p.min) + '</b>' + (p.minBy.length ? '<small>' + esc(p.minBy.join(', ')) + '</small>' : '') + '</div><div><small>Gap</small><b class="num" style="color:' + (p.gap == null ? 'inherit' : p.gap > 0 ? 'var(--pricey)' : 'var(--cheap)') + '">' + pct(p.gap) + '</b></div></div>' +
     '<div class="box"><h4>Competitors</h4><table class="off"><thead><tr><th>Competitor</th><th>Price</th><th>vs us</th><th>Stock</th><th>Checked</th><th></th></tr></thead><tbody>';
   if (!offs.length) h += '<tr><td colspan="6" class="empty" style="padding:18px">No competitor links for this product yet. Add one below.<br>' + ar('ضيف لينك يدوي أو استنى الـ match run الجاي') + '</td></tr>';
@@ -393,10 +395,96 @@ function exportCsv() {
   toast('Exported ' + rows.length + ' products · اتصدّر');
 }
 
+
+/* ============================== settings ============================== */
+function renderSettings() {
+  var s = D.settings, h = '';
+  h += '<section class="card set-sec" style="margin-bottom:16px"><div class="card-h"><h2>Competitors</h2><span class="sub">' + ar('عدّل الاسم أو الموقع أو الفئات أو أوقف المنافس') + '</span><span class="sp"></span><button class="btn sm primary" id="btnAddComp2" type="button">' + ICON.plus + 'Add competitor</button></div><div class="body">' +
+    '<div class="trow h"><div>Name</div><div>Website</div><div>Categories ' + ar('(! = استثناء)') + '</div><div>Platform</div><div></div></div>';
+  D.competitors.forEach(function (c) {
+    h += '<div class="trow"><div class="nm">' + esc(c.name) + (c.active ? '' : ' <span class="pill not_checked">Paused</span>') + '</div><div class="sm"><a href="' + esc(c.website) + '" target="_blank" rel="noopener">' + esc(c.website.replace(/^https?:\/\//, '')) + '</a></div><div class="sm" title="' + esc(c.categories) + '">' + esc(c.categories) + '</div><div class="sm">' + esc(c.platform || 'auto') + '</div><div><button class="btn sm ghost" data-edit-comp="' + esc(c.name) + '">Edit</button></div></div>';
+  });
+  h += '</div></section><div class="set-grid"><div class="grid" style="align-content:start">';
+
+  h += '<section class="card set-sec"><div class="card-h"><h2>Update links in bulk</h2><span class="sub">' + ar('الصق لينكات المنافسين مرة واحدة') + '</span></div><div class="body"><p>One per line: <b>Product (SKU or name)</b> · <b>Competitor</b> · <b>URL</b> · note<br>' + ar('الفاصل: Tab أو ; أو | — واللينك اليدوي ليه أولوية وبيتفحص فورًا') + '</p>' +
+    '<textarea class="inp" id="bulkTxt" placeholder="PA279CV ; Compumarts ; https://www.compumarts.com/products/...&#10;MDHH4LL/A ; Tradeline Egypt ; https://tradelinestores.com/products/..."></textarea>' +
+    '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn primary" id="bulkGo" type="button"><span class="spin"></span>Import & check</button><span style="color:var(--faint);font-size:12.5px">' + ar('أو عدّل في الشيت مباشرة واضغط Sync sheet فوق') + '</span></div><div id="bulkRep"></div></div></section>';
+
+  h += '<section class="card set-sec"><div class="card-h"><h2>The data sheet</h2></div><div class="body"><p>' + ar('كل البيانات في Google Sheet. لو عدّلت فيه لينكات أو منافسين أو إعدادات، ارجع هنا واضغط') + ' <b>Sync sheet</b>.</p>' + (D.sheetUrl ? '<a class="btn" href="' + esc(D.sheetUrl) + '" target="_blank" rel="noopener">Open the sheet ' + ICON.ext + '</a>' : '') + '</div></section>';
+  h += '</div><div class="grid" style="align-content:start">';
+
+  h += '<section class="card set-sec"><div class="card-h"><h2>Status names</h2><span class="sub">' + ar('سمّي الحالات زي ما تحب') + '</span></div><div class="body"><div class="lbl-grid">';
+  [['only_us', 'var(--only)'], ['same', 'var(--same)'], ['cheaper', 'var(--cheap)'], ['pricier', 'var(--pricey)'], ['not_checked', 'var(--other)'], ['needs_help', 'var(--warn)']].forEach(function (x) {
+    h += '<label><span><i style="background:' + x[1] + '"></i>' + esc(x[0].replace(/_/g, ' ')) + '</span><input class="inp" data-label="' + x[0] + '" value="' + esc(ST[x[0]].l) + '"></label>';
+  });
+  h += '</div><div style="margin-top:12px"><button class="btn primary" id="saveLabels" type="button">Save names</button></div></div></section>';
+
+  h += '<section class="card set-sec"><div class="card-h"><h2>General</h2></div><div class="body"><div class="lbl-grid">' +
+    fld('same_price_threshold_pct', 'Same-price threshold %', s.same) + fld('alert_gap_pct', 'Alert when cheaper by %', s.gap) + fld('alert_change_pct', 'Alert on price change %', s.change) +
+    fld('refresh_hours', 'Check hours (Cairo)', s.hours) + fld('product_sync_every_hours', 'Sync products every N h', s.syncEvery) + fld('email_digest_to', 'Daily digest email', s.email) +
+    '<label style="grid-column:1/-1"><span>Firecrawl API key ' + ar('(للمواقع المحجوبة)') + (s.fcSet ? ' <span class="pill ok">saved</span>' : '') + '</span><input class="inp" type="password" data-gen="firecrawl_api_key" placeholder="' + (s.fcSet ? '•••••••• (leave empty to keep)' : 'fc-…') + '" autocomplete="off"></label>' +
+    '</div><div style="margin-top:12px"><button class="btn primary" id="saveGeneral" type="button">Save settings</button></div></div></section>';
+  h += '</div></div>';
+  $('#v-settings').innerHTML = h;
+}
+function fld(key, label, val) { return '<label><span>' + label + '</span><input class="inp" data-gen="' + key + '" value="' + esc(val == null ? '' : val) + '"></label>'; }
+
+function openRenameModal(sku) {
+  var p = D.byKey[sku]; if (!p) return;
+  $('#modal').innerHTML = '<h3>Rename product</h3><p>' + esc(p.orig) + '<br>' + ar('الاسم ده بيظهر في الداشبورد بس — المتجر ما بيتغيرش. سيبه فاضي عشان ترجع للاسم الأصلي.') + '</p>' +
+    '<label class="fld"><span>Display name</span><input id="rnName" value="' + esc(p.renamed ? p.n : '') + '" placeholder="' + esc(p.orig) + '"></label>' +
+    '<label class="tog" style="margin-bottom:6px"><input type="checkbox" id="rnHide"> Hide this product from the dashboard ' + ar('(إخفاء)') + '</label>' +
+    '<div class="mf"><button class="btn" id="mCancel" type="button">Cancel</button><button class="btn primary" id="mSave" type="button"><span class="spin"></span>Save</button></div>';
+  openModal(); $('#mCancel').onclick = closeModal;
+  $('#mSave').onclick = function () {
+    var b = this; b.disabled = true; b.classList.add('busy');
+    run('renameProduct', [sku, $('#rnName').value, $('#rnHide').checked], function () {
+      toast('Saved · اتحفظ'); closeModal(); if ($('#rnHide').checked) closeAll(); load(true).then(function () { if (S.drawer && D.byKey[S.drawer]) openDrawer(S.drawer); });
+    }, function (e) { b.disabled = false; b.classList.remove('busy'); toast(e.message, true); });
+  };
+}
+function openEditCompModal(name) {
+  var c = D.competitors.filter(function (x) { return x.name === name; })[0]; if (!c) return;
+  $('#modal').innerHTML = '<h3>Edit competitor</h3><p>' + ar('لو غيّرت الاسم، بيتغيّر في كل الأسعار والتاريخ والتنبيهات') + '</p>' +
+    '<label class="fld"><span>Name</span><input id="ecName" value="' + esc(c.name) + '"></label>' +
+    '<label class="fld"><span>Website</span><input id="ecSite" type="url" value="' + esc(c.website) + '"></label>' +
+    '<label class="fld"><span>Categories ' + ar('(All = الكل، ! = استثناء، مثال: Laptops, !Macbook)') + '</span><input id="ecCats" list="catList2" value="' + esc(c.categories) + '"></label><datalist id="catList2">' + D.categories.map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
+    '<label class="tog" style="margin-bottom:6px"><input type="checkbox" id="ecActive"' + (c.active ? ' checked' : '') + '> Active ' + ar('(شغّال)') + '</label>' +
+    '<div class="mf"><button class="btn" id="mCancel" type="button">Cancel</button><button class="btn primary" id="mSave" type="button"><span class="spin"></span>Save</button></div>';
+  openModal(); $('#mCancel').onclick = closeModal;
+  $('#mSave').onclick = function () {
+    var b = this; b.disabled = true; b.classList.add('busy');
+    run('saveCompetitor', [name, $('#ecName').value, $('#ecSite').value, $('#ecCats').value, $('#ecActive').checked], function () { toast('Saved · اتحفظ'); closeModal(); load(true); },
+      function (e) { b.disabled = false; b.classList.remove('busy'); toast(e.message, true); });
+  };
+}
+function saveGeneral(btn) {
+  var o = {}; $$('[data-gen]').forEach(function (i) { var k = i.dataset.gen, v = i.value.trim(); if (k === 'firecrawl_api_key' && !v) return; o[k] = v; });
+  btn.disabled = true; btn.classList.add('busy');
+  run('saveSettings', [o], function () { toast('Saved · اتحفظ'); load(true); btn.disabled = false; btn.classList.remove('busy'); }, function (e) { btn.disabled = false; btn.classList.remove('busy'); toast(e.message, true); });
+}
+
 /* ============================== events ============================== */
 document.addEventListener('click', function (e) {
   var t;
   if ((t = e.target.closest('.nav button'))) return go(t.dataset.tab);
+  if ((t = e.target.closest('[data-rename]'))) return openRenameModal(t.dataset.rename);
+  if ((t = e.target.closest('[data-edit-comp]'))) return openEditCompModal(t.dataset.editComp);
+  if (e.target.closest('#btnAddComp2')) return openCompModal();
+  if ((t = e.target.closest('#saveGeneral'))) return saveGeneral(t);
+  if ((t = e.target.closest('#saveLabels'))) {
+    var o = {}; $$('[data-label]').forEach(function (i) { if (i.value.trim()) o['label_' + i.dataset.label] = i.value.trim(); });
+    t.disabled = true; run('saveSettings', [o], function () { toast('Saved · اتحفظ'); t.disabled = false; load(true); }, function (er) { t.disabled = false; toast(er.message, true); }); return;
+  }
+  if ((t = e.target.closest('#bulkGo'))) {
+    t.disabled = true; t.classList.add('busy');
+    run('bulkImportLinks', [$('#bulkTxt').value], function (r) {
+      t.disabled = false; t.classList.remove('busy');
+      var h = '<div class="rep"><b>' + r.added + '</b> added · <b>' + r.updated + '</b> updated · checked <b>' + r.check.checked + '</b> (' + r.check.ok + ' read' + (r.check.failed ? ', ' + r.check.failed + ' failed' : '') + ')' + (r.check.remaining ? ' · ' + r.check.remaining + ' more will be checked automatically' : '') + r.errors.map(function (x) { return '<span class="e">' + esc(x) + '</span>'; }).join('') + '</div>';
+      $('#bulkRep').innerHTML = h; toast('Imported · اتضاف'); load(true);
+    }, function (er) { t.disabled = false; t.classList.remove('busy'); toast(er.message, true); });
+    return;
+  }
   if (e.target.closest('#drClose') || e.target.id === 'scrim') return closeAll();
   if ((t = e.target.closest('[data-link]'))) { e.stopPropagation(); return openLinkModal(t.dataset.link, t.dataset.comp || ''); }
   if ((t = e.target.closest('[data-upd]'))) {
@@ -435,6 +523,15 @@ document.addEventListener('keydown', function (e) {
   if (e.key === '/' && !/input|select|textarea/i.test(document.activeElement.tagName)) { if (S.tab !== 'products') go('products'); var q = $('#q'); if (q) { e.preventDefault(); q.focus(); } }
 });
 
+$('#btnSyncSheet').onclick = function () {
+  var b = this; if (b.disabled) return; b.disabled = true; b.classList.add('busy');
+  run('syncSheetChanges', [], function (r) {
+    b.disabled = false; b.classList.remove('busy');
+    toast(r.checked ? 'Synced · ' + r.checked + ' new/edited link(s) checked' + (r.remaining ? ', ' + r.remaining + ' left' : '') : 'Sheet re-read · لا يوجد لينكات جديدة');
+    load(true);
+  }, function (e) { b.disabled = false; b.classList.remove('busy'); toast(e.message, true); });
+};
+
 $('#btnRun').onclick = function () {
   var b = this; if (b.disabled) return;
   b.disabled = true; b.classList.add('busy');
@@ -445,7 +542,7 @@ $('#btnRun').onclick = function () {
 /* theme */
 (function () {
   var saved = null; try { saved = localStorage.getItem('pr-theme'); } catch (e) {}
-  var theme = saved || 'dark';
+  var theme = saved || 'light';
   function apply() { document.documentElement.setAttribute('data-theme', theme); }
   apply();
   $('#btnTheme').onclick = function () { theme = theme === 'dark' ? 'light' : 'dark'; apply(); try { localStorage.setItem('pr-theme', theme); } catch (e) {} };
