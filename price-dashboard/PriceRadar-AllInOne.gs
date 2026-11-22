@@ -289,6 +289,9 @@ const SEED_COMPETITORS = [
   ['Jumia', 'https://www.jumia.com.eg', 'All', 'jsonld', true],
   ['Amazon.eg', 'https://www.amazon.eg', 'All', 'custom', true],
   // MacBook / Apple
+  ['Trojan Stores', 'https://www.trojanstores.com', 'Macbook, Apple Products', '', true],
+  ['Al Sheikh Stores', 'https://alsheikhstores.com', 'Macbook, Apple Products', 'shopify', true],
+  ['Miami Center', 'https://miamicenters.com', 'Macbook, Apple Products', '', true],
   ['Tradeline Egypt', 'https://tradelinestores.com', 'Macbook, Apple Products, Laptops, Gaming', '', true],
   ['Gadedly', 'https://gadedly.com', 'Macbook, Apple Products', '', true],
   ['Switch Plus', 'https://switchpluseg.com', 'Macbook, Apple Products', '', true],
@@ -300,7 +303,6 @@ const SEED_COMPETITORS = [
   ['Noon Egypt', 'https://www.noon.com/egypt-en', 'Laptops, Macbook, Apple Products, Gaming', 'custom', true],
   // Windows laptops (من غير ماك)
   ['Dream 2000', 'https://dream2000.com.eg', 'Laptops, Gaming, Monitors, !Macbook, !Apple Products', '', true],
-  ['Trojan Store', 'https://trojanstoreeg.com', 'Laptops, Gaming, !Macbook, !Apple Products', '', true],
   ['Albetar Store', 'https://albetarstore.com', 'Laptops, Gaming, !Macbook, !Apple Products', '', true],
   ['Elghazawy', 'https://elghazawy.com', 'Laptops, Gaming, !Macbook, !Apple Products', '', true]
 ];
