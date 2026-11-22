@@ -47,6 +47,8 @@ const DEFAULT_SETTINGS = [
   ['match_min_confidence', '0.8', 'أقل ثقة لقبول مطابقة تلقائية (أقل منها = Exact match needed)'],
   ['rediscover_days', '7', 'نعيد البحث التلقائي عن منتج مالوش مطابقات بعد كام يوم'],
   ['history_keep_days', '180', 'مدة الاحتفاظ بـ Price_History'],
+  ['firecrawl_api_key', '', 'مفتاح Firecrawl (اختياري) — بيقرأ المواقع اللي بتحجب Google أو بتعرض الأسعار بـ JavaScript'],
+  ['firecrawl_max_per_run', '80', 'أقصى عدد صفحات عبر Firecrawl في التشغيل الواحد (بيتحكم في التكلفة)'],
   ['email_digest_to', '', 'إيميل الملخص اليومي (فاضي = معطّل)'],
   ['digest_hour', '9', 'ساعة إرسال الملخص (توقيت القاهرة)']
 ];

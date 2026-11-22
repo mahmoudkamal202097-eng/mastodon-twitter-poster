@@ -148,10 +148,18 @@ function metaContent_(html, names) {
   return '';
 }
 function amazonFallback_(html) {
-  const m = /<span class="a-offscreen">\s*(?:EGP|ج\.م\.?)?\s*([\d,]+(?:\.\d+)?)/i.exec(html);
-  if (!m) return null;
-  const unavailable = /Currently unavailable|غير متوفر حاليًا|غير متوفر حاليا/i.test(html);
-  const preorder = /pre-?order|طلب مسبق/i.test(html) && !/id="add-to-cart-button"/.test(html);
+  // السعر الحقيقي جوه بلوك priceToPay / corePrice — مش أول a-offscreen في الصفحة (دي بتبقى إعلانات منتجات تانية)
+  let m = /class="a-price[^"]*priceToPay[^"]*"[\s\S]{0,400}?a-price-whole">\s*([\d,]+)/i.exec(html);
+  if (!m) {
+    const c = html.indexOf('id="corePrice_feature_div"');
+    const seg = c > -1 ? html.substr(c, 4000) : '';
+    m = /a-offscreen">\s*(?:EGP|ج\.م\.?)?(?:&nbsp;|\s)*([\d,]+(?:\.\d+)?)/i.exec(seg);
+  }
+  const avBlock = (/id="availability"[\s\S]{0,700}/i.exec(html) || [''])[0].replace(/<[^>]+>/g, ' ');
+  const unavailable = /Currently unavailable|غير متوفر حاليًا|غير متوفر حاليا/i.test(avBlock);
+  if (!m) return unavailable ? { price: null, inStock: false, source: 'amazon', hasAvail: true } : null;
+  const hasButton = /id="add-to-cart-button"/.test(html);
+  const preorder = /pre-?order|طلب مسبق/i.test(avBlock) && !hasButton;
   return finalizePrice_(parseFloat(m[1].replace(/,/g, '')), !(unavailable || preorder), 'amazon', true);
 }
 
@@ -161,6 +169,23 @@ function finalizePrice_(rawPrice, inStock, source, hasAvail) {
   if (!isFinite(price) || price < APP.MIN_PRICE) price = null;
   return { price: price, inStock: !!inStock, source: source, hasAvail: hasAvail !== false };
 }
+
+/* ======================= Firecrawl (للمواقع اللي بتحجب Google) ======================= */
+
+var _fcUsed = 0;
+/** يبني طلب Firecrawl لصفحة محجوبة. محتاج firecrawl_api_key في Settings. */
+function firecrawlRequest_(url) {
+  return {
+    url: 'https://api.firecrawl.dev/v1/scrape', method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + String(getSetting_('firecrawl_api_key')).trim() },
+    payload: JSON.stringify({ url: url, formats: ['rawHtml'], waitFor: 1500, timeout: 45000 })
+  };
+}
+function firecrawlHtml_(resp) {
+  if (!resp || resp.getResponseCode() !== 200) return null;
+  try { const j = JSON.parse(resp.getContentText()); return (j.data && j.data.rawHtml) || null; } catch (e) { return null; }
+}
+function firecrawlEnabled_() { return String(getSetting_('firecrawl_api_key') || '').trim().length > 10; }
 
 /* ======================= فحص مجموعة Matches ======================= */
 
@@ -190,6 +215,22 @@ function checkMatches_(matches) {
         const r = parseResponse_('page', rs2[j], chunk[k].url);
         results[k] = { match: chunk[k], result: r, error: (r && r.price) ? '' : errorOf_(rs2[j], r) };
       });
+    }
+    // اللي لسه من غير سعر (محجوب/JS) → Firecrawl لو متفعّل (بحد أقصى لكل تشغيل)
+    if (firecrawlEnabled_()) {
+      const cap = Math.round(getNum_('firecrawl_max_per_run', 80));
+      const need = [];
+      results.forEach((x, k) => { if (!(x.result && x.result.price) && !(x.result && x.result.hasAvail && x.result.inStock === false && x.result.price == null) && _fcUsed + need.length < cap) need.push(k); });
+      if (need.length) {
+        const rs3 = fetchBatch_(need.map(k => firecrawlRequest_(chunk[k].url)));
+        need.forEach((k, j) => {
+          _fcUsed++;
+          const html = firecrawlHtml_(rs3[j]);
+          const r = html ? parsePage_(html, chunk[k].url) : null;
+          if (r && r.price) results[k] = { match: chunk[k], result: r, error: '' };
+          else results[k].error = (results[k].error || '') + ' + firecrawl ' + (html ? 'no price' : 'failed');
+        });
+      }
     }
     results.forEach(x => out.push(x));
     if (i + size < matches.length) Utilities.sleep(sleep);
