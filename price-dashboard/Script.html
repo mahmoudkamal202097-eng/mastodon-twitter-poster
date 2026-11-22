@@ -1,0 +1,457 @@
+<script>
+(function () {
+'use strict';
+
+/* ============================== helpers ============================== */
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+var ar = function (t) { return '<span class="ar" dir="rtl" lang="ar">' + t + '</span>'; };
+var fmt = function (n) { return n == null ? '—' : Math.round(n).toLocaleString('en-US'); };
+var pct = function (n, d) { return n == null ? '—' : (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(d == null ? 1 : d) + '%'; };
+function ago(t, now) {
+  if (!t) return 'never';
+  var s = Math.max(0, ((now || Date.now()) - t) / 1000);
+  if (s < 90) return 'just now';
+  var m = Math.round(s / 60); if (m < 60) return m + ' min ago';
+  var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+  var d = Math.round(h / 24); return d + (d === 1 ? ' day ago' : ' days ago');
+}
+function toast(msg, err) {
+  var t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, err ? 5200 : 3000);
+}
+function run(fn, args, ok, fail) {
+  if (typeof google === 'undefined' || !google.script) { (fail || function () {})({ message: 'Open this page from the Web App link.' }); return; }
+  var r = google.script.run.withSuccessHandler(ok || function () {}).withFailureHandler(fail || function (e) { toast(e && e.message || String(e), true); });
+  r[fn].apply(r, args || []);
+}
+
+var ICON = {
+  search: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  ext: '<svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  pin: '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M14 3l7 7-3 1-4 4v5l-2 2-3-6-6-3 2-2h5l4-4z"/></svg>',
+  link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
+  refresh: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>',
+  plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
+  close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>'
+};
+
+/* ============================== statuses ============================== */
+var ST = {
+  only_us:     { l: "Only we have it", d: 'مفيش منافس عنده المنتج متوفر', c: 'var(--only)' },
+  same:        { l: 'Same price', d: 'الفرق ضمن النسبة المسموحة', c: 'var(--same)' },
+  cheaper:     { l: "We're cheaper", d: 'سعرنا أقل من كل المنافسين المتوفرين', c: 'var(--cheap)' },
+  pricier:     { l: "We're pricier", d: 'فيه منافس متوفر أرخص مننا', c: 'var(--pricey)' },
+  not_checked: { l: 'Not checked yet', d: 'لسه ما اتفحصش', c: 'var(--other)' },
+  needs_help:  { l: 'Needs your help', d: 'محتاج رابط يدوي', c: 'var(--warn)' }
+};
+var ST_ORDER = ['pricier', 'same', 'cheaper', 'only_us', 'needs_help', 'not_checked'];
+var ALERT_T = {
+  competitor_cheaper: ['Competitor cheaper', '▼'], price_drop: ['Price drop', '↓'], price_rise: ['Price rise', '↑'],
+  new_match: ['New match', '+'], back_in_stock: ['Back in stock', '↺']
+};
+
+/* ============================== state ============================== */
+var D = null;
+var S = { tab: 'overview', cat: '', st: '', q: '', comp: '', sort: 'priority', page: 0, per: 40, aType: '', aUnread: false, alerts: null, drawer: null };
+var pollTimer = null;
+
+/* ============================== data ============================== */
+function load(force) {
+  return new Promise(function (res) {
+    run('getDashboard', [!!force], function (d) {
+      D = d; prep(); render(); updateProgress(d.progress); res(d);
+    }, function (e) { showErr(e && e.message || String(e)); res(); });
+  });
+}
+function prep() {
+  D.byKey = {}; D.products.forEach(function (p) {
+    D.byKey[p.sku] = p;
+    p.hay = (p.n + ' ' + p.sku + ' ' + p.brand + ' ' + p.cat).toLowerCase();
+  });
+  D.active = D.competitors.filter(function (c) { return c.active; });
+}
+function showErr(m) {
+  $('#app').innerHTML = '<div class="card errbox"><h2 style="margin:0 0 8px">Couldn’t load the data</h2><div style="color:var(--muted)">Make sure you ran <b>setup()</b> once from the Apps Script editor, and that the Web App is deployed.</div><code>' + esc(m) + '</code><button class="btn primary" id="retry" type="button">Try again</button></div>';
+  $('#retry').onclick = function () { load(true); };
+}
+
+/* ============================== progress ============================== */
+function updateProgress(p) {
+  if (!p) return;
+  var run_ = p.status === 'running';
+  $('#prog').hidden = !run_;
+  var lbl = { sync: 'Syncing our products', prices: 'Reading competitor prices', discover: 'Finding matches' }[p.phase] || 'Checking';
+  if (run_) { $('#progTxt').textContent = lbl + (p.phase === 'prices' && p.total ? ' · ' + p.i + '/' + p.total : ''); $('#progBar').style.width = p.pct + '%'; $('#progPct').textContent = p.pct + '%'; }
+  var b = $('#btnRun'); b.disabled = run_; b.classList.toggle('busy', run_);
+  $('#btnRunTxt').textContent = run_ ? 'Checking…' : 'Run check now';
+  if (D) {
+    $('#updatedTxt').textContent = ago(D.lastChecked);
+    var bell = $('#bell'); bell.hidden = !D.unread; bell.textContent = D.unread > 99 ? '99+' : D.unread;
+  }
+  clearTimeout(pollTimer);
+  if (run_) pollTimer = setTimeout(poll, 5000);
+}
+function poll() {
+  run('getProgress', [], function (p) {
+    var was = D && D.progress && D.progress.status === 'running';
+    if (D) D.progress = p;
+    updateProgress(p);
+    if (p.status !== 'running' && was) { toast('Check finished · الفحص خلص'); load(true); }
+  });
+}
+
+/* ============================== charts ============================== */
+function stackedBars(rows) {
+  var segs = [['pricier', 'var(--pricey)'], ['same', 'var(--same)'], ['cheaper', 'var(--cheap)'], ['only_us', 'var(--only)'], ['other', 'var(--other)']];
+  var h = '<div class="legend">' + segs.map(function (s) { return '<span><i style="background:' + s[1] + '"></i>' + (s[0] === 'other' ? 'Not checked / needs help' : ST[s[0]].l) + '</span>'; }).join('') + '</div><div class="chart-box">';
+  if (!rows.length) return h + '<div class="empty">No products yet · ' + ar('لسه مفيش منتجات') + '</div></div>';
+  rows.slice(0, 9).forEach(function (r) {
+    var tot = r.pricier + r.same + r.cheaper + r.only_us + r.other;
+    h += '<div class="cbar" data-cat="' + esc(r.cat) + '" title="Open ' + esc(r.cat) + '"><div class="nm">' + esc(r.cat) + '</div><div class="bar">' +
+      segs.map(function (s) { return r[s[0]] ? '<span style="flex:' + r[s[0]] + ';background:' + s[1] + '" title="' + (s[0] === 'other' ? 'Other' : ST[s[0]].l) + ': ' + r[s[0]] + '"></span>' : ''; }).join('') +
+      '</div><div class="ct num">' + tot + '</div></div>';
+  });
+  return h + '</div>';
+}
+
+function trendChart(trend) {
+  if (!trend || trend.length < 2) return '<div class="empty">The 30-day trend appears after a couple of days of data.<br>' + ar('الرسم هيظهر بعد يومين من البيانات') + '</div>';
+  var W = 560, H = 190, PL = 44, PR = 12, PT = 12, PB = 26, n = trend.length;
+  var vals = trend.map(function (t) { return t.avg; });
+  var mn = Math.min.apply(null, vals.concat([0])), mx = Math.max.apply(null, vals.concat([0]));
+  var pad = (mx - mn) * .15 || 1; mn -= pad; mx += pad;
+  var X = function (i) { return PL + i * (W - PL - PR) / (n - 1); }, Y = function (v) { return PT + (H - PT - PB) * (1 - (v - mn) / (mx - mn)); };
+  var d = trend.map(function (t, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(t.avg).toFixed(1); }).join('');
+  var area = d + 'L' + X(n - 1).toFixed(1) + ' ' + Y(0).toFixed(1) + 'L' + X(0).toFixed(1) + ' ' + Y(0).toFixed(1) + 'Z';
+  var g = '';
+  for (var k = 0; k <= 3; k++) { var v = mn + (mx - mn) * k / 3, y = Y(v); g += '<line x1="' + PL + '" x2="' + (W - PR) + '" y1="' + y + '" y2="' + y + '" stroke="var(--line2)"/><text x="' + (PL - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10.5" fill="var(--faint)" font-family="JetBrains Mono,monospace">' + v.toFixed(1) + '%</text>'; }
+  var last = trend[n - 1];
+  return '<div class="chart-box"><svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="height:auto" role="img" aria-label="Average gap vs cheapest in-stock competitor, last 30 days">' + g +
+    '<line x1="' + PL + '" x2="' + (W - PR) + '" y1="' + Y(0) + '" y2="' + Y(0) + '" stroke="var(--faint)" stroke-dasharray="4 4"/>' +
+    '<path d="' + area + '" fill="var(--lime)" opacity=".10"/><path d="' + d + '" fill="none" stroke="var(--lime)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<circle cx="' + X(n - 1) + '" cy="' + Y(last.avg) + '" r="4.5" fill="var(--lime)" stroke="var(--surface)" stroke-width="2"/>' +
+    '<text x="' + PL + '" y="' + (H - 6) + '" font-size="10.5" fill="var(--faint)" font-family="JetBrains Mono,monospace">' + trend[0].d.slice(5) + '</text><text x="' + (W - PR) + '" y="' + (H - 6) + '" text-anchor="end" font-size="10.5" fill="var(--faint)" font-family="JetBrains Mono,monospace">' + last.d.slice(5) + '</text></svg>' +
+    '<div style="color:var(--muted);font-size:12.5px;margin-top:6px">Positive = we are more expensive than the cheapest in-stock competitor. Latest: <b class="num" style="color:' + (last.avg > 0 ? 'var(--pricey)' : 'var(--cheap)') + '">' + pct(last.avg) + '</b></div></div>';
+}
+
+var PALETTE = ['#ff8a5b', '#8db4ff', '#4fd6c4', '#f5b84a', '#d28bff', '#7be0a0', '#ff6a9a', '#9aa7ff'];
+function historyChart(series, names) {
+  var dates = {}, vals = [];
+  names.forEach(function (k) { (series[k] || []).forEach(function (pt) { dates[pt.d] = 1; vals.push(pt.p); }); });
+  var ds = Object.keys(dates).sort();
+  if (ds.length < 2 || !vals.length) return '<div class="empty">History builds up with every check.<br>' + ar('التاريخ بيتبني مع كل فحص — ارجع بكرة') + '</div>';
+  var W = 580, H = 210, PL = 50, PR = 12, PT = 12, PB = 26, n = ds.length;
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), pad = (mx - mn) * .12 || mx * .02 || 1; mn -= pad; mx += pad;
+  var X = function (i) { return PL + i * (W - PL - PR) / (n - 1); }, Y = function (v) { return PT + (H - PT - PB) * (1 - (v - mn) / (mx - mn)); };
+  var idx = {}; ds.forEach(function (d, i) { idx[d] = i; });
+  var g = '';
+  for (var k = 0; k <= 3; k++) { var v = mn + (mx - mn) * k / 3, y = Y(v); g += '<line x1="' + PL + '" x2="' + (W - PR) + '" y1="' + y + '" y2="' + y + '" stroke="var(--line2)"/><text x="' + (PL - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10.5" fill="var(--faint)" font-family="JetBrains Mono,monospace">' + fmt(v) + '</text>'; }
+  var lines = '', leg = '';
+  names.forEach(function (name, j) {
+    var s = series[name]; if (!s || !s.length) return;
+    var col = name === 'GEEKS' ? 'var(--lime)' : PALETTE[j % PALETTE.length];
+    var d = '', pen = false;
+    s.forEach(function (pt) { d += (pen ? 'L' : 'M') + X(idx[pt.d]).toFixed(1) + ' ' + Y(pt.p).toFixed(1); pen = true; });
+    var l = s[s.length - 1];
+    lines += '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="' + (name === 'GEEKS' ? 3 : 2) + '" stroke-linecap="round" stroke-linejoin="round" ' + (l.s === false && name !== 'GEEKS' ? 'stroke-dasharray="4 4"' : '') + '/><circle cx="' + X(idx[l.d]) + '" cy="' + Y(l.p) + '" r="3.8" fill="' + col + '" stroke="var(--surface2)" stroke-width="2"/>';
+    leg += '<span><i style="background:' + col + '"></i>' + (name === 'GEEKS' ? 'Geeks (us)' : esc(name)) + '</span>';
+  });
+  return '<div class="legend" style="padding:0 0 8px">' + leg + '</div><svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="height:auto" role="img" aria-label="Price history">' + g + lines +
+    '<text x="' + PL + '" y="' + (H - 6) + '" font-size="10.5" fill="var(--faint)" font-family="JetBrains Mono,monospace">' + ds[0].slice(5) + '</text><text x="' + (W - PR) + '" y="' + (H - 6) + '" text-anchor="end" font-size="10.5" fill="var(--faint)" font-family="JetBrains Mono,monospace">' + ds[n - 1].slice(5) + '</text></svg>';
+}
+
+/* ============================== render: shell ============================== */
+function render() {
+  var views = '<section class="view" id="v-overview"></section><section class="view" id="v-products"></section><section class="view" id="v-alerts"></section>';
+  if (!$('#v-overview')) $('#app').innerHTML = views;
+  $$('.view').forEach(function (v) { v.hidden = v.id !== 'v-' + S.tab; });
+  $$('.nav button').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.tab === S.tab ? 'true' : 'false'); });
+  renderOverview(); renderProducts();
+  if (S.tab === 'alerts') renderAlerts();
+}
+function go(tab) { S.tab = tab; if (tab === 'alerts') S.alerts = null; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+
+/* ============================== overview ============================== */
+function renderOverview() {
+  var s = D.summary, tot = s.total || 1;
+  var needs = s.needs_help + s.not_checked;
+  var p = D.progress || {};
+  var h = '<div class="grid g-info">' +
+    info('Last update', ago(D.lastChecked), 'Products synced ' + ago(D.lastSynced) + ' · ' + ar('آخر مزامنة'), '') +
+    info('Products monitored', '<span class="num">' + s.total + '</span>', 'In stock / pre-order ' + ar('بس'), '') +
+    info('Coverage', '<span class="num">' + s.coveragePct + '%</span>', '<span class="num">' + s.withData + '/' + s.total + '</span> ' + ar('ليهم سعر منافس'), '<div class="meter"><i style="width:' + s.coveragePct + '%"></i></div>') +
+    info('Need a link', '<span class="num" style="color:' + (s.needs_help ? 'var(--warn)' : 'inherit') + '">' + s.needs_help + '</span>', '<span class="num">' + s.not_checked + '</span> ' + ar('لسه ما اتفحصوش'), '') +
+    info('Check status', p.status === 'running' ? 'Running' : 'Idle', p.status === 'running' ? (p.pct + '% — ' + ({ sync: 'syncing', prices: 'reading prices', discover: 'finding matches' }[p.phase] || '')) : ar('التحديث الجاي') + ' <span class="num">' + esc(D.settings.hours) + '</span> ' + ar('بتوقيت القاهرة'), p.status === 'running' ? '<div class="meter"><i style="width:' + p.pct + '%"></i></div>' : '') +
+    '</div>';
+
+  h += '<div class="sec-t">Price position summary · ' + ar('موقفنا السعري') + '</div><div class="grid g-pos">';
+  [['only_us', 'M12 2l3 7h7l-5.5 4.2L18 21l-6-4.5L6 21l1.5-7.8L2 9h7z'], ['same', 'M5 9h14M5 15h14'], ['cheaper', 'M12 5v14M6 13l6 6 6-6'], ['pricier', 'M12 19V5M6 11l6-6 6 6']].forEach(function (x) {
+    var k = x[0], m = ST[k];
+    h += '<button type="button" class="card pos" data-st="' + k + '" style="--c:' + m.c + '"><div class="t"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="' + x[1] + '"/></svg>' + m.l + '</div><div class="big num">' + s[k] + '</div><div class="d ar" dir="rtl">' + (k === 'same' ? 'الفرق ضمن ±' + D.settings.same + '% من أرخص سعر' : m.d) + '</div><div class="pct num">' + Math.round(s[k] / tot * 100) + '%</div></button>';
+  });
+  h += '</div>';
+
+  h += '<div class="grid g-two"><section class="card"><div class="card-h"><h2>Biggest gaps — competitors cheaper than us</h2><span class="sub">Top 10 · ' + ar('أكبر الفجوات') + '</span></div><ul class="gaps">';
+  if (!D.top.length) h += '<li class="empty">No competitor is cheaper than us right now 👌<br>' + ar('مفيش منافس أرخص مننا حاليًا') + '</li>';
+  D.top.forEach(function (t, i) {
+    h += '<li class="gap-i" data-open="' + esc(t.sku) + '"><span class="rk num">' + (i + 1) + '</span><div class="thumb" style="background-image:url(' + esc(t.img) + ')"></div><div class="m"><b title="' + esc(t.n) + '">' + esc(t.n) + '</b><span>' + esc(t.comp) + ' · <span class="num">' + fmt(t.cp) + '</span> vs us <span class="num">' + fmt(t.p) + '</span></span></div><div class="r"><div class="gap-pct num">' + pct(t.gap) + '</div><div class="num" style="font-size:12px;color:var(--faint)">+' + fmt(t.p - t.cp) + ' EGP</div></div></li>';
+  });
+  h += '</ul></section><div class="grid" style="align-content:start">' +
+    '<section class="card"><div class="card-h"><h2>Price position by category</h2><span class="sub">' + ar('اضغط على الفئة لفتحها') + '</span></div>' + stackedBars(D.byCategory) + '</section></div></div>';
+  h += '<section class="card" style="margin-top:16px"><div class="card-h"><h2>Average gap — last 30 days</h2><span class="sub">vs cheapest in-stock · ' + ar('متوسط الفجوة آخر 30 يوم') + '</span></div>' + trendChart(D.trend) + '</section>';
+  $('#v-overview').innerHTML = h;
+}
+function info(k, v, sub, extra) { return '<div class="card info"><div class="k">' + k + '</div><div class="v">' + v + '</div><div style="font-size:12.5px;color:var(--faint);margin-top:2px">' + sub + '</div>' + extra + '</div>'; }
+
+/* ============================== products ============================== */
+function filtered() {
+  var q = S.q.trim().toLowerCase(), words = q ? q.split(/\s+/) : [];
+  var rows = D.products.filter(function (p) {
+    if (S.cat && p.top !== S.cat) return false;
+    if (S.st && p.st !== S.st) return false;
+    if (S.comp) { var c = p.cells[S.comp]; if (!c || c.p == null) return false; }
+    if (words.length) { for (var i = 0; i < words.length; i++) if (p.hay.indexOf(words[i]) < 0) return false; }
+    return true;
+  });
+  var nm = function (a, b) { return a.n.localeCompare(b.n); };
+  var cmp = {
+    priority: function (a, b) { return a.grp - b.grp || (a.grp === 0 ? (b.gap - a.gap) : 0) || nm(a, b); },
+    gap: function (a, b) { return (b.gap == null ? -1e9 : b.gap) - (a.gap == null ? -1e9 : a.gap) || nm(a, b); },
+    price: function (a, b) { return b.p - a.p; },
+    name: nm
+  }[S.sort];
+  return rows.sort(cmp);
+}
+
+function renderProducts() {
+  var counts = {}; D.products.forEach(function (p) { counts[p.st] = (counts[p.st] || 0) + 1; });
+  var h = '<section class="card" style="overflow:hidden"><div class="cats">' +
+    '<button type="button" class="cat" data-cat="" aria-pressed="' + (!S.cat) + '">All<em class="num">' + D.products.length + '</em></button>' +
+    D.categories.slice(0, 10).map(function (c) { return '<button type="button" class="cat" data-cat="' + esc(c.name) + '" aria-pressed="' + (S.cat === c.name) + '">' + esc(c.name) + '<em class="num">' + c.count + '</em></button>'; }).join('') + '</div>' +
+    '<div class="tool"><div class="search">' + ICON.search + '<input id="q" type="search" placeholder="Search SKU or name…  ( / )" title="بحث بالاسم أو الـ SKU" value="' + esc(S.q) + '" autocomplete="off"></div>' +
+    '<select class="sel" id="fComp" aria-label="Competitor"><option value="">All competitors</option>' + D.active.map(function (c) { return '<option' + (S.comp === c.name ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select>' +
+    '<select class="sel" id="fSort" aria-label="Sort"><option value="priority"' + (S.sort === 'priority' ? ' selected' : '') + '>Sort: Priority</option><option value="gap"' + (S.sort === 'gap' ? ' selected' : '') + '>Sort: Biggest gap</option><option value="price"' + (S.sort === 'price' ? ' selected' : '') + '>Sort: Our price</option><option value="name"' + (S.sort === 'name' ? ' selected' : '') + '>Sort: Name</option></select>' +
+    '<span class="sp"></span>' +
+    '<button class="btn" id="btnSync" type="button"><span class="spin"></span>' + ICON.refresh + 'Update our products</button>' +
+    '<button class="btn" id="btnAddComp" type="button">' + ICON.plus + 'Add competitor</button>' +
+    '<button class="btn" id="btnCsv" type="button">' + ICON.down + 'Export CSV</button></div>' +
+    '<div class="chips">' + ['', 'pricier', 'same', 'cheaper', 'only_us', 'needs_help', 'not_checked'].map(function (k) {
+      var m = k ? ST[k] : { l: 'All statuses', c: 'var(--lime)' };
+      return '<button type="button" class="chip" data-st="' + k + '" style="--c:' + m.c + '" aria-pressed="' + (S.st === k) + '">' + m.l + (k ? '<em class="num">' + (counts[k] || 0) + '</em>' : '') + '</button>';
+    }).join('') + '</div><div id="tbl"></div></section>';
+  $('#v-products').innerHTML = h;
+  renderTable();
+}
+
+function renderTable() {
+  var rows = filtered(), per = S.per, pages = Math.max(1, Math.ceil(rows.length / per));
+  if (S.page >= pages) S.page = pages - 1;
+  var slice = rows.slice(S.page * per, S.page * per + per);
+  var comps = D.active;
+  var h = '<div class="tbl-wrap"><table class="t"><thead><tr><th class="c-prod">Product</th><th>Our price</th><th>Gap</th><th>Status</th>' +
+    comps.map(function (c) { return '<th title="' + esc(c.categories) + '">' + esc(c.name) + '</th>'; }).join('') + '<th></th></tr></thead><tbody>';
+  if (!slice.length) h += '<tr><td colspan="' + (5 + comps.length) + '" class="empty">No products match these filters · ' + ar('مفيش منتجات مطابقة') + '</td></tr>';
+  var lastGrp = -1, GL = ['Competitor in stock · منافس متوفر', 'Competitors out of stock · المنافس نافد', 'No competitor price yet · لسه مفيش سعر منافس'];
+  slice.forEach(function (p) {
+    if (S.sort === 'priority' && p.grp !== lastGrp) { h += '<tr class="grp-row"><td colspan="' + (5 + comps.length) + '">' + GL[p.grp] + '</td></tr>'; lastGrp = p.grp; }
+    var gcls = p.gap == null ? '' : (p.st === 'same' ? 'eq' : (p.gap > 0 ? 'up' : 'down'));
+    h += '<tr data-sku="' + esc(p.sku) + '"><td class="c-prod"><div class="prod" data-open="' + esc(p.sku) + '"><div class="thumb" style="background-image:url(' + esc(p.img) + ')"></div><div class="tt"><b title="' + esc(p.n) + '">' + esc(p.n) + '</b><span>' + esc(p.sku) + (p.stock === 'preorder' ? ' · Pre-order' : '') + '</span></div></div></td>' +
+      '<td><span class="price num">' + fmt(p.p) + '</span></td>' +
+      '<td>' + (p.gap == null ? '<span class="dash">—</span>' : '<span class="gp num ' + gcls + '">' + pct(p.gap) + '</span>') + '</td>' +
+      '<td><span class="pill ' + p.st + '">' + ST[p.st].l + '</span></td>';
+    comps.forEach(function (c) { h += '<td>' + cell(p, c) + '</td>'; });
+    h += '<td><div class="row-act"><button class="btn sm ghost" data-link="' + esc(p.sku) + '" title="Add / edit link & note — ضيف أو عدّل لينك وملاحظة">' + ICON.link + '<span class="hide-s">Link</span></button><button class="btn sm ghost" data-upd="' + esc(p.sku) + '" title="Re-check now — افحص المنتج ده دلوقتي"><span class="spin"></span>' + ICON.refresh + '</button></div></td></tr>';
+  });
+  h += '</tbody></table></div><div class="pager"><span><b class="num">' + rows.length + '</b> products</span><div class="pn"><button class="btn sm" id="pPrev" type="button"' + (S.page === 0 ? ' disabled' : '') + '>‹ Prev</button><span class="num">' + (S.page + 1) + ' / ' + pages + '</span><button class="btn sm" id="pNext" type="button"' + (S.page >= pages - 1 ? ' disabled' : '') + '>Next ›</button></div></div>';
+  $('#tbl').innerHTML = h;
+}
+
+function cell(p, c) {
+  var x = p.cells[c.name];
+  if (!x) return '<span class="dash">—</span>';
+  var pin = x.m === 'manual' ? ' ' + ICON.pin : '';
+  if (x.low) return '<a class="cp low" href="' + esc(x.u) + '" target="_blank" rel="noopener" title="Exact match needed — راجع اللينك">⚠ Review</a>';
+  if (x.p == null) return x.u ? '<a class="cp oos" href="' + esc(x.u) + '" target="_blank" rel="noopener" title="Not read yet">…</a>' : '<span class="dash">—</span>';
+  var best = x.s && p.min != null && x.p === p.min, cls = best ? 'best' : (x.s ? '' : 'oos');
+  var stale = x.t && (D.now - x.t) > 36 * 3600e3 ? '<span class="stale" title="مااتحدّثش من أكتر من 36 ساعة">●</span>' : '';
+  return '<a class="cp ' + cls + '" href="' + esc(x.u) + '" target="_blank" rel="noopener" title="' + esc(c.name + (x.s ? '' : ' — out of stock') + (x.note ? ' — ' + x.note : '') + ' · checked ' + ago(x.t, D.now)) + '">' + fmt(x.p) + pin + '</a>' + stale;
+}
+
+/* ============================== drawer ============================== */
+function openDrawer(sku) {
+  var p = D.byKey[sku]; if (!p) return;
+  S.drawer = sku;
+  var offs = Object.keys(p.cells).map(function (k) { var c = p.cells[k]; c.name = k; return c; }).sort(function (a, b) {
+    var la = a.p != null && a.s, lb = b.p != null && b.s;
+    if (la !== lb) return la ? -1 : 1; return (a.p == null ? 1e12 : a.p) - (b.p == null ? 1e12 : b.p);
+  });
+  var h = '<div class="dr-h"><div class="thumb" style="background-image:url(' + esc(p.img) + ')"></div><div style="flex:1;min-width:0"><h3>' + esc(p.n) + '</h3><div style="color:var(--faint);font-size:12.5px;margin-bottom:8px">' + esc(p.sku) + ' · ' + esc(p.cat) + '</div><span class="pill ' + p.st + '">' + ST[p.st].l + '</span></div><button class="btn icon ghost" id="drClose" type="button" aria-label="Close">' + ICON.close + '</button></div><div class="dr-b">' +
+    '<div class="kvs"><div><small>Our price</small><b class="num">' + fmt(p.p) + '</b></div><div><small>Cheapest in stock</small><b class="num">' + fmt(p.min) + '</b>' + (p.minBy.length ? '<small>' + esc(p.minBy.join(', ')) + '</small>' : '') + '</div><div><small>Gap</small><b class="num" style="color:' + (p.gap == null ? 'inherit' : p.gap > 0 ? 'var(--pricey)' : 'var(--cheap)') + '">' + pct(p.gap) + '</b></div></div>' +
+    '<div class="box"><h4>Competitors</h4><table class="off"><thead><tr><th>Competitor</th><th>Price</th><th>vs us</th><th>Stock</th><th>Checked</th><th></th></tr></thead><tbody>';
+  if (!offs.length) h += '<tr><td colspan="6" class="empty" style="padding:18px">No competitor links for this product yet. Add one below.<br>' + ar('ضيف لينك يدوي أو استنى الـ match run الجاي') + '</td></tr>';
+  offs.forEach(function (o) {
+    var d = o.p != null ? o.p - p.p : null, best = o.s && p.min != null && o.p === p.min;
+    h += '<tr' + (best ? ' class="best"' : '') + '><td><b>' + esc(o.name) + '</b>' + (o.m === 'manual' ? ' <span title="Manual link — never overwritten">' + ICON.pin + '</span>' : (o.cf != null ? ' <span style="color:var(--faint);font-size:11.5px">auto ' + Math.round(o.cf * 100) + '%</span>' : '')) + (o.note ? '<div style="font-size:12px;color:var(--muted)">' + esc(o.note) + '</div>' : '') + '</td>' +
+      '<td><span class="num price" style="' + (o.s === false ? 'opacity:.55;text-decoration:line-through' : '') + '">' + fmt(o.p) + '</span></td>' +
+      '<td>' + (d == null ? '—' : '<span class="num gp ' + (d < 0 ? 'up' : d > 0 ? 'down' : 'eq') + '">' + (d > 0 ? '+' : d < 0 ? '−' : '') + fmt(Math.abs(d)) + '</span>') + '</td>' +
+      '<td>' + (o.low ? '<span class="pill needs_help">Review</span>' : o.p == null ? '<span class="pill not_checked">Pending</span>' : o.s ? '<span class="pill ok">In stock</span>' : '<span class="pill oos">Out of stock</span>') + '</td>' +
+      '<td style="color:var(--faint);font-size:12.5px;white-space:nowrap">' + (o.t ? ago(o.t, D.now) : '—') + '</td>' +
+      '<td style="white-space:nowrap"><a href="' + esc(o.u) + '" target="_blank" rel="noopener">' + ICON.ext + '</a> <button class="btn sm ghost" data-link="' + esc(sku) + '" data-comp="' + esc(o.name) + '">Edit</button></td></tr>';
+  });
+  h += '</tbody></table><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn sm" data-link="' + esc(sku) + '" type="button">' + ICON.plus + 'Add link & note</button><button class="btn sm" data-upd="' + esc(sku) + '" type="button"><span class="spin"></span>' + ICON.refresh + 'Update this product</button>' + (p.url ? '<a class="btn sm ghost" href="' + esc(p.url) + '" target="_blank" rel="noopener">Open on our store ' + ICON.ext + '</a>' : '') + '</div></div>' +
+    '<div class="box"><h4>Price history</h4><div id="drHist" class="empty">Loading…</div></div></div>';
+  $('#drawer').innerHTML = h; $('#drawer').classList.add('show'); $('#drawer').setAttribute('aria-hidden', 'false'); $('#scrim').classList.add('show');
+  run('getProductHistory', [sku], function (series) {
+    if (S.drawer !== sku) return;
+    var names = ['GEEKS'].concat(Object.keys(series).filter(function (k) { return k !== 'GEEKS'; }));
+    var el = $('#drHist'); if (el) { el.className = ''; el.innerHTML = historyChart(series, names); }
+  }, function () { var el = $('#drHist'); if (el) el.textContent = 'Could not load history.'; });
+}
+function closeAll() {
+  S.drawer = null; $('#drawer').classList.remove('show'); $('#drawer').setAttribute('aria-hidden', 'true');
+  $('#modal').classList.remove('show'); $('#scrim').classList.remove('show');
+}
+
+/* ============================== modals ============================== */
+function openLinkModal(sku, comp) {
+  var p = D.byKey[sku]; if (!p) return;
+  var ex = comp && p.cells[comp] ? p.cells[comp] : null;
+  var opts = D.active.map(function (c) { return '<option' + (c.name === comp ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('');
+  $('#modal').innerHTML = '<h3>Add link & note</h3><p>' + esc(p.n) + '<br>' + ar('ضيف أو عدّل رابط المنتج عند المنافس، واكتب أي ملاحظة (زي باندل أو لون مختلف)') + '</p>' +
+    '<label class="fld"><span>Competitor</span><select id="mComp">' + opts + '</select></label>' +
+    '<label class="fld"><span>Product URL at the competitor</span><input id="mUrl" type="url" placeholder="https://…" value="' + esc(ex ? ex.u : '') + '"></label>' +
+    '<label class="fld"><span>Note (optional)</span><textarea id="mNote" placeholder="e.g. bundle with mouse, different color…">' + esc(ex ? ex.note : '') + '</textarea></label>' +
+    '<div class="hint">Manual links always win · ' + ar('الرابط اليدوي ليه أولوية، وما بيتمسح ولا بيتغير من أي تحديث تلقائي') + '</div><div class="mf"><button class="btn" id="mCancel" type="button">Cancel</button><button class="btn primary" id="mSave" type="button"><span class="spin"></span>Save & read price</button></div>';
+  openModal();
+  $('#mCancel').onclick = closeModal;
+  $('#mSave').onclick = function () {
+    var b = this; b.disabled = true; b.classList.add('busy');
+    run('saveManualMatch', [sku, $('#mComp').value, $('#mUrl').value, $('#mNote').value], function (r) {
+      toast(r && r.ok ? 'Saved — price read · اتحفظ واتقرأ السعر' : 'Saved · اتحفظ، والسعر لسه ما اتقراش'); closeModal(); load(true).then(function () { if (S.drawer) openDrawer(S.drawer); });
+    }, function (e) { b.disabled = false; b.classList.remove('busy'); toast(e.message, true); });
+  };
+}
+function openCompModal() {
+  $('#modal').innerHTML = '<h3>Add competitor</h3><p>We’ll check the site and detect its platform before saving.<br>' + ar('هنتأكد من الموقع ونحدد نوع المنصة قبل الحفظ') + '</p>' +
+    '<label class="fld"><span>Name</span><input id="cName" placeholder="e.g. Trojan Store"></label>' +
+    '<label class="fld"><span>Website</span><input id="cSite" type="url" placeholder="https://…"></label>' +
+    '<label class="fld"><span>Categories they sell (comma separated, or All)</span><input id="cCats" list="catList" placeholder="Monitors, Laptops"></label><datalist id="catList">' + D.categories.map(function (c) { return '<option value="' + esc(c.name) + '">'; }).join('') + '</datalist>' +
+    '<div class="hint">' + ar('كل منافس بيتقارن بالفئات اللي هنا بس') + '</div><div id="cMsg" class="hint"></div>' +
+    '<div class="mf"><button class="btn" id="mCancel" type="button">Cancel</button><button class="btn primary" id="mSave" type="button"><span class="spin"></span>Verify & save</button></div>';
+  openModal();
+  $('#mCancel').onclick = closeModal;
+  $('#mSave').onclick = function () {
+    var b = this; b.disabled = true; b.classList.add('busy'); $('#cMsg').textContent = 'Checking the site…'; $('#cMsg').className = 'hint';
+    run('addCompetitor', [$('#cName').value, $('#cSite').value, $('#cCats').value], function (r) {
+      toast('Competitor added · اتضاف — platform: ' + r.platform); closeModal(); load(true);
+    }, function (e) { b.disabled = false; b.classList.remove('busy'); $('#cMsg').textContent = e.message; $('#cMsg').className = 'hint err-t'; });
+  };
+}
+function openModal() { $('#modal').classList.add('show'); $('#scrim').classList.add('show'); var i = $('#modal input,#modal select'); if (i) setTimeout(function () { i.focus(); }, 60); }
+function closeModal() { $('#modal').classList.remove('show'); if (!S.drawer) $('#scrim').classList.remove('show'); }
+
+/* ============================== alerts ============================== */
+function renderAlerts() {
+  var box = $('#v-alerts');
+  if (S.alerts == null) {
+    box.innerHTML = '<div class="grid"><div class="sk" style="height:300px"></div></div>';
+    run('getAlertsApi', [{}], function (rows) { S.alerts = rows; renderAlerts(); });
+    return;
+  }
+  var rows = S.alerts.filter(function (a) { return (!S.aType || a.type === S.aType) && (!S.aUnread || !a.read); });
+  var types = ['', 'competitor_cheaper', 'price_drop', 'price_rise', 'new_match', 'back_in_stock'];
+  var h = '<section class="card"><div class="card-h"><h2>Alerts</h2><span class="sub">' + S.alerts.filter(function (a) { return !a.read; }).length + ' unread</span><span class="sp"></span><label class="chip" style="cursor:pointer"><input type="checkbox" id="aUnread"' + (S.aUnread ? ' checked' : '') + ' style="accent-color:var(--lime)"> Unread only</label><button class="btn sm" id="aReadAll" type="button">Mark all read</button></div>' +
+    '<div class="chips" style="padding-top:6px">' + types.map(function (t) { return '<button type="button" class="chip" data-at="' + t + '" aria-pressed="' + (S.aType === t) + '">' + (t ? ALERT_T[t][0] : 'All types') + '</button>'; }).join('') + '</div><ul class="al-list">';
+  if (!rows.length) h += '<li class="empty">Nothing here — you’re all caught up · ' + ar('مفيش تنبيهات') + '</li>';
+  rows.slice(0, 200).forEach(function (a) {
+    var T = ALERT_T[a.type] || [a.type, '•'];
+    var detail;
+    if (a.type === 'new_match') detail = esc(a.comp) + ' · first price <b class="num">' + fmt(a.nw) + '</b>';
+    else if (a.type === 'back_in_stock') detail = esc(a.comp) + ' is back in stock at <b class="num">' + fmt(a.nw) + '</b>';
+    else detail = esc(a.comp) + ' · <span class="num">' + fmt(a.old) + '</span> → <b class="num">' + fmt(a.nw) + '</b>';
+    h += '<li class="al' + (a.read ? '' : ' unread') + '" data-open="' + esc(a.sku) + '"><div class="ic ' + a.type + '">' + T[1] + '</div><div class="m"><b>' + (a.read ? '' : '<span class="dotun"></span>') + esc(a.n) + '</b><br><span>' + T[0] + ' — ' + detail + (a.gap != null ? ' · gap <b class="num">' + pct(a.gap) + '</b>' : '') + '</span></div><time>' + ago(a.t) + '</time></li>';
+  });
+  box.innerHTML = h + '</ul></section>';
+}
+
+/* ============================== CSV ============================== */
+function exportCsv() {
+  var rows = filtered(), comps = D.active;
+  var q = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  var lines = [['SKU', 'Name', 'Category', 'Our price', 'Status', 'Gap %', 'Cheapest in stock', 'Cheapest competitor'].concat(comps.map(function (c) { return c.name; })).map(q).join(',')];
+  rows.forEach(function (p) {
+    lines.push([p.sku, p.n, p.cat, p.p, ST[p.st].l, p.gap == null ? '' : p.gap.toFixed(1), p.min == null ? '' : p.min, p.minBy.join(' / ')].concat(comps.map(function (c) {
+      var x = p.cells[c.name]; return !x || x.p == null ? '' : x.p + (x.s ? '' : ' (OOS)');
+    })).map(q).join(','));
+  });
+  var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'priceradar-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  toast('Exported ' + rows.length + ' products · اتصدّر');
+}
+
+/* ============================== events ============================== */
+document.addEventListener('click', function (e) {
+  var t;
+  if ((t = e.target.closest('.nav button'))) return go(t.dataset.tab);
+  if (e.target.closest('#drClose') || e.target.id === 'scrim') return closeAll();
+  if ((t = e.target.closest('[data-link]'))) { e.stopPropagation(); return openLinkModal(t.dataset.link, t.dataset.comp || ''); }
+  if ((t = e.target.closest('[data-upd]'))) {
+    var b = t, sku = b.dataset.upd; b.disabled = true; b.classList.add('busy');
+    run('updateProduct', [sku], function (r) { toast('Checked ' + r.checked + ' link(s) · ' + r.ok + ' read' + (r.found ? ' · ' + r.found + ' new match(es)' : '')); load(true).then(function () { if (S.drawer) openDrawer(S.drawer); }); },
+      function (er) { b.disabled = false; b.classList.remove('busy'); toast(er.message, true); });
+    return;
+  }
+  if ((t = e.target.closest('[data-open]'))) return openDrawer(t.dataset.open);
+  if ((t = e.target.closest('.pos'))) { S.st = t.dataset.st; S.cat = ''; S.q = ''; S.comp = ''; S.page = 0; go('products'); return; }
+  if ((t = e.target.closest('.cbar'))) { S.cat = t.dataset.cat; S.st = ''; S.page = 0; go('products'); return; }
+  if ((t = e.target.closest('.cat'))) { S.cat = t.dataset.cat; S.page = 0; renderProducts(); return; }
+  if ((t = e.target.closest('.chip[data-st]'))) { S.st = t.dataset.st; S.page = 0; renderProducts(); return; }
+  if ((t = e.target.closest('.chip[data-at]'))) { S.aType = t.dataset.at; renderAlerts(); return; }
+  if (e.target.id === 'aReadAll') { run('markAllAlertsRead', [], function () { toast('All alerts marked read · كله اتعلّم مقروء'); S.alerts = null; load(true); }); return; }
+  if (e.target.id === 'pPrev') { S.page--; renderTable(); $('#tbl').scrollIntoView({ block: 'start' }); return; }
+  if (e.target.id === 'pNext') { S.page++; renderTable(); $('#tbl').scrollIntoView({ block: 'start' }); return; }
+  if (e.target.closest('#btnAddComp')) return openCompModal();
+  if (e.target.closest('#btnCsv')) return exportCsv();
+  if ((t = e.target.closest('#btnSync'))) {
+    t.disabled = true; t.classList.add('busy');
+    run('syncNow', [], function (r) { toast('Synced · اتحدّث — ' + r.monitored + ' products'); load(true); }, function (er) { t.disabled = false; t.classList.remove('busy'); toast(er.message, true); });
+    return;
+  }
+});
+document.addEventListener('change', function (e) {
+  if (e.target.id === 'fComp') { S.comp = e.target.value; S.page = 0; renderTable(); }
+  if (e.target.id === 'fSort') { S.sort = e.target.value; S.page = 0; renderTable(); }
+  if (e.target.id === 'aUnread') { S.aUnread = e.target.checked; renderAlerts(); }
+});
+document.addEventListener('input', function (e) {
+  if (e.target.id === 'q') { clearTimeout(e.target._t); var v = e.target.value; e.target._t = setTimeout(function () { S.q = v; S.page = 0; renderTable(); }, 120); }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeAll();
+  if (e.key === '/' && !/input|select|textarea/i.test(document.activeElement.tagName)) { if (S.tab !== 'products') go('products'); var q = $('#q'); if (q) { e.preventDefault(); q.focus(); } }
+});
+
+$('#btnRun').onclick = function () {
+  var b = this; if (b.disabled) return;
+  b.disabled = true; b.classList.add('busy');
+  run('runCheckNow', [], function (p) { if (D) D.progress = p; updateProgress(p); toast('Check started · الفحص شغال في الخلفية، تقدر تقفل الصفحة'); },
+    function (e) { b.disabled = false; b.classList.remove('busy'); toast(e.message, true); });
+};
+
+/* theme */
+(function () {
+  var saved = null; try { saved = localStorage.getItem('pr-theme'); } catch (e) {}
+  var theme = saved || 'dark';
+  function apply() { document.documentElement.setAttribute('data-theme', theme); }
+  apply();
+  $('#btnTheme').onclick = function () { theme = theme === 'dark' ? 'light' : 'dark'; apply(); try { localStorage.setItem('pr-theme', theme); } catch (e) {} };
+})();
+
+load();
+setInterval(function () { if (!document.hidden && (!D || !D.progress || D.progress.status !== 'running')) load(); }, 10 * 60 * 1000);
+})();
+</script>
