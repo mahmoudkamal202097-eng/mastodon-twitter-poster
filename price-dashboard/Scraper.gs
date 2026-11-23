@@ -70,7 +70,8 @@ function bestVariant_(variants, spec, titleOf) {
   const ourChip = chip_(spec);
   const ourSize = (/\b(1[3-6])\s*(?:″|"|INCH|-INCH)?/i.exec(label) || [])[1] || '';
   const ourWords = normWords_(label).filter(w => w.length >= 3 && !/\d/.test(w) && ['ENGLISH', 'ARABIC'].indexOf(w) < 0);
-  const ourArabic = /arabic|عربي/i.test(String(spec));   // كيبورد عربي؟ (لو مش مذكور = English)
+  const ourArabic = /arabic|عربي/i.test(String(spec));
+  const ourColor = APPLE_COLORS.filter(c => (' ' + normWords_(label).join(' ') + ' ').indexOf(' ' + c + ' ') > -1)[0] || '';   // كيبورد عربي؟ (لو مش مذكور = English)
   let best = null, bestScore = 0;
   variants.forEach(v => {
     const t = String(titleOf(v) || '');
@@ -78,6 +79,8 @@ function bestVariant_(variants, spec, titleOf) {
     if (vMem.some(x => ourMem.indexOf(x) < 0)) return;      // مواصفة مش عندنا = جهاز تاني
     const vChip = chip_(t);
     if (ourChip && vChip && ourChip !== vChip) return;
+    const vColor = APPLE_COLORS.filter(c => (' ' + normWords_(t).join(' ') + ' ').indexOf(' ' + c + ' ') > -1)[0] || '';
+    if (ourColor && vColor && ourColor !== vColor) return;      // لون مختلف = مواصفة تانية
     const vSize = (/\b(1[3-6])\b/.exec(t) || [])[1] || '';
     if (ourSize && vSize && ourSize !== vSize) return;
     const words = normWords_(t);
@@ -91,7 +94,7 @@ function bestVariant_(variants, spec, titleOf) {
 }
 
 /** يحلل رد الاستراتيجية → {price, inStock, source} أو null. spec = اسم منتجنا (فيه المواصفات بعد " — ") */
-function parseResponse_(kind, resp, pageUrl, spec) {
+function parseResponse_(kind, resp, pageUrl, spec, sku) {
   if (!resp) return null;
   const code = resp.getResponseCode();
   if (code !== 200) return null;
@@ -131,11 +134,66 @@ function parseResponse_(kind, resp, pageUrl, spec) {
       return finalizePrice_(price, !!p.is_in_stock, 'woocommerce');
     }
   } catch (e) { return null; }
-  return parsePage_(body, pageUrl);
+  return parsePage_(body, pageUrl, spec, sku);
 }
 
-/** JSON-LD ← meta ← Amazon ← regex نصي */
-function parsePage_(html, url) {
+
+/**
+ * مواقع Medusa / Next.js (زي Trojan): كل مواصفات المنتج جوه الصفحة نفسها
+ * (title "1TB / 24GB / Midnight" + sku "MDHG4" + السعر + المخزون). بيرجّع [{title, sku, price, inStock}]
+ */
+function medusaVariants_(html) {
+  let u = String(html || '');
+  if (u.indexOf('"variants":[{"id":"variant_') < 0) u = u.replace(/\\"/g, '"');
+  const out = [];
+  const starts = [];
+  const re = /\{"id":"variant_[A-Z0-9]+"/g;
+  let m;
+  while ((m = re.exec(u))) starts.push(m.index);
+  starts.forEach((s, i) => {
+    const chunk = u.substring(s, Math.min(starts[i + 1] || (s + 4000), s + 4000));
+    const title = (/"title":"([^"]{1,120})"/.exec(chunk) || [])[1];
+    const sku = (/"sku":"([^"]*)"/.exec(chunk) || [])[1] || '';
+    const reg = Number((/"regular_price":(\d+(?:\.\d+)?)/.exec(chunk) || [])[1]);
+    const sale = Number((/"sale_price":(\d+(?:\.\d+)?)/.exec(chunk) || [])[1]);
+    const stock = (/"stock_status":"(\w+)"/.exec(chunk) || [])[1] || '';
+    const pid = (/"product_id":"([^"]+)"/.exec(chunk) || [])[1] || '';
+    if (!title || !(reg || sale)) return;
+    out.push({ title: decodeHtml_(title), sku: sku, price: sale > 0 ? sale : reg, inStock: /instock/i.test(stock) && !/out/i.test(stock), pid: pid });
+  });
+  // الصفحة فيها كمان منتجات مقترحة (iPad, Watch...) → ناخد بس مواصفات المنتج الرئيسي (أول منتج في الصفحة)
+  const mainPid = out.length ? out[0].pid : '';
+  const seen = {};
+  return out.filter(v => (!mainPid || v.pid === mainPid)).filter(v => { const k = v.title + '|' + v.sku; if (seen[k]) return false; seen[k] = 1; return true; });
+}
+
+/** يختار مواصفة Medusa: بالـ SKU (كود آبل) لو متاح، وإلا بالمواصفات */
+function pickMedusa_(vars, spec, sku, pageTitle) {
+  if (!vars.length) return null;
+  // عنوان الصفحة (13″ / 15″ / Pro / Air) لازم يتوافق مع منتجنا
+  if (pageTitle && spec) {
+    const fo = appleFeatures_(spec), fp = appleFeatures_(pageTitle);
+    if (fo.fam && fp.fam && (fo.fam !== fp.fam || (fo.size && fp.size && fo.size !== fp.size))) return null;
+  }
+  const code = appleCode_(sku) || String(sku || '').toUpperCase();
+  if (code) {
+    const bySku = vars.filter(v => String(v.sku).toUpperCase().indexOf(code) === 0)[0];
+    if (bySku) return bySku;
+  }
+  if (vars.length === 1) return vars[0];
+  if (String(spec || '').indexOf(' — ') < 0) return null;
+  return bestVariant_(vars, spec, v => v.title);
+}
+
+/** Medusa ← JSON-LD ← meta ← Amazon ← regex نصي */
+function parsePage_(html, url, spec, sku) {
+  const mv = medusaVariants_(html);
+  if (mv.length) {
+    const pt = decodeHtml_((/<title[^>]*>([^<]+)<\/title>/i.exec(html) || [])[1] || '');
+    const pv = pickMedusa_(mv, spec, sku, pt);
+    if (pv) return finalizePrice_(pv.price, pv.inStock, 'medusa', true);
+    if (mv.length > 1) return { price: null, inStock: false, source: 'medusa', hasAvail: false, note: 'variant not matched' };
+  }
   let best = null;
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m;
@@ -214,6 +272,7 @@ function amazonFallback_(html) {
 function finalizePrice_(rawPrice, inStock, source, hasAvail) {
   let price = parseFloat(String(rawPrice == null ? '' : rawPrice).replace(/[^\d.]/g, ''));
   if (!isFinite(price) || price < APP.MIN_PRICE) price = null;
+  if (price != null && /^9{5,}$/.test(String(Math.round(price)))) price = null;   // 999999 = سعر وهمي
   return { price: price, inStock: !!inStock, source: source, hasAvail: hasAvail !== false };
 }
 
@@ -251,7 +310,7 @@ function checkMatches_(matches) {
     const resps = fetchBatch_(plan.map(p => p.req));
     const second = [];       // اللي فشل بالاستراتيجية الأولى نجرّب صفحته
     const results = chunk.map((m, k) => {
-      const r = parseResponse_(plan[k].kind, resps[k], m.url, m.spec);
+      const r = parseResponse_(plan[k].kind, resps[k], m.url, m.spec, m.sku);
       if (r && r.price) return { match: m, result: r };
       if (r && r.note === 'variant not matched') return { match: m, result: null, error: 'variant not matched (ضيف لينك المواصفة نفسها)' };
       if (plan[k].kind !== 'page') { second.push(k); return { match: m, result: null }; }
@@ -260,7 +319,7 @@ function checkMatches_(matches) {
     if (second.length) {
       const rs2 = fetchBatch_(second.map(k => req_(chunk[k].url)));
       second.forEach((k, j) => {
-        const r = parseResponse_('page', rs2[j], chunk[k].url);
+        const r = parseResponse_('page', rs2[j], chunk[k].url, chunk[k].spec, chunk[k].sku);
         results[k] = { match: chunk[k], result: r, error: (r && r.price) ? '' : errorOf_(rs2[j], r) };
       });
     }
@@ -274,7 +333,7 @@ function checkMatches_(matches) {
         need.forEach((k, j) => {
           _fcUsed++;
           const html = firecrawlHtml_(rs3[j]);
-          const r = html ? parsePage_(html, chunk[k].url) : null;
+          const r = html ? parsePage_(html, chunk[k].url, chunk[k].spec, chunk[k].sku) : null;
           if (r && r.price) results[k] = { match: chunk[k], result: r, error: '' };
           else results[k].error = (results[k].error || '') + ' + firecrawl ' + (html ? 'no price' : 'failed');
         });

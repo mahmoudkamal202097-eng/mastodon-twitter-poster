@@ -9,8 +9,34 @@
 
 const STOP_WORDS = { ASUS: 1, MONITOR: 1, GAMING: 1, INCH: 1, THE: 1, WITH: 1, AND: 1, FOR: 1, SCREEN: 1, DISPLAY: 1, NEW: 1, EGYPT: 1, WARRANTY: 1 };
 
+/**
+ * توحيد نص المواصفات قبل المقارنة (مواقع مصرية بتكتب بالعربي):
+ *   أرقام هندية → لاتيني، الألوان/الكيبورد/بوصة بالعربي → إنجليزي،
+ *   "512/16" أو "1T/24" أو "512/16GB" (تخزين/رام) → "512GB 16GB".
+ */
+const AR_TEXT_MAP = [
+  [/منتصف الليل/g, ' MIDNIGHT '], [/ضوء النجوم/g, ' STARLIGHT '], [/(أسود|اسود) فلكي/g, ' SPACE BLACK '],
+  [/رمادي فلكي/g, ' SPACE GRAY '], [/(أزرق|ازرق) سماوي/g, ' SKY BLUE '], [/فضة|فضي/g, ' SILVER '],
+  [/ذهبي/g, ' GOLD '], [/(أسود|اسود)/g, ' BLACK '], [/(أبيض|ابيض)/g, ' WHITE '], [/وردي/g, ' PINK '],
+  [/(إنجليزي|انجليزي|إنجليزية|انجليزية)/g, ' ENGLISH '], [/عربي/g, ' ARABIC '], [/بوصة|انش|إنش/g, ' INCH '],
+  [/\bBLUSCH\b/gi, ' BLUSH '], [/ماك بوك/g, ' MACBOOK '], [/ماك ستوديو/g, ' MAC STUDIO '], [/ماك ميني/g, ' MAC MINI '],
+  [/(^|\s)(ابل|آبل|أبل)(?=\s|$)/g, ' APPLE '], [/(^|\s)(اير|إير|آير)(?=\s|$)/g, ' AIR '], [/(^|\s)برو(?=\s|$)/g, ' PRO '],
+  [/(^|\s)نيو(?=\s|$)/g, ' NEO '], [/(^|\s)ماكس(?=\s|$)/g, ' MAX '], [/(^|\s)ستوديو(?=\s|$)/g, ' STUDIO '], [/شريحة/g, ' CHIP '], [/معالج/g, ' '],
+  [/مستعمل|متجدد/g, ' RENEWED ']
+];
+function enText_(s) {
+  let t = String(s == null ? '' : s).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+  AR_TEXT_MAP.forEach(p => { t = t.replace(p[0], p[1]); });
+  t = t.replace(/(\d{3,4}|\b[1-8]\s?TB?)\s*(?:GB|SSD)?\s*\/\s*(\d{1,3})\s*(?:GB|SSD)?(?![\d])/gi, (m, a, b) => {
+    const st = /T/i.test(a) ? parseInt(a, 10) + 'TB' : a + 'GB';
+    return ' ' + st + ' ' + b + 'GB ';
+  });
+  return t;
+}
+
 /** كلمات منظّمة: uppercase + حروف/أرقام بس */
 function normWords_(s) {
+  s = enText_(s);
   return String(s || '').toUpperCase().replace(/″|"|'|’/g, ' ').replace(/[^A-Z0-9؀-ۿ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
 }
 
@@ -28,13 +54,13 @@ function appleCode_(sku) {
 /** مواصفات الرام/التخزين في النص: 16GB, 512GB, 1TB */
 function memSpecs_(s) {
   const o = {};
-  (String(s || '').toUpperCase().match(/\b\d+\s?(GB|TB)\b/g) || []).forEach(x => o[x.replace(/\s/g, '')] = 1);
+  (String(enText_(s) || '').toUpperCase().match(/\b\d+\s?(GB|TB)\b/g) || []).forEach(x => o[x.replace(/\s/g, '')] = 1);
   return Object.keys(o).sort().join(',');
 }
 
 /** شريحة آبل: M5 / M5 PRO / M5 MAX / A18 PRO (لمنع خلط M4 بـ M5) */
 function chip_(s) {
-  const j = normWords_(s).join(' ');
+  const j = normWords_(s).join(' ').replace(/\bM([1-9]) CHIP\b/g, 'M$1');
   const a = /\bM[1-9]\b(?: (?:PRO|MAX|ULTRA))?/.exec(j) || /\bA\d{2} PRO\b/.exec(j);
   return a ? a[0] : '';
 }
@@ -66,6 +92,9 @@ function jaccard_(a, b) {
 
 /** ثقة المطابقة 0..1 بين منتجنا وعنوان مرشّح */
 function matchConfidence_(ourName, ourToken, candTitle) {
+  // أجهزة آبل: مطابقة بالخصائص (أدق من تشابه الكلمات)
+  const ac = appleConfidence_(appleFeatures_(ourName), appleFeatures_(candTitle));
+  if (ac != null) return ac;
   const j = jaccard_(tokenSet_(ourName), tokenSet_(candTitle));
   const candJoined = normWords_(candTitle).join(' ');
   let hit = ourToken && hasToken_(candJoined, ourToken);
@@ -89,6 +118,55 @@ function matchConfidence_(ourName, ourToken, candTitle) {
   // منتجات من غير رام/تخزين (WHOOP bands، إكسسوارات): الاسم لازم يكون قريب جدًا
   if (!so && !sc && specPenal === 0 && j >= 0.75) return 0.85;
   return Math.max(0, Math.min(0.79, j * 0.9 - specPenal));
+}
+
+
+/* ======================= مطابقة آبل بالخصائص ======================= */
+
+const APPLE_COLORS = ['SPACE BLACK', 'SPACE GRAY', 'SKY BLUE', 'MIDNIGHT', 'STARLIGHT', 'SILVER', 'CITRUS', 'BLUSH', 'INDIGO', 'GOLD'];
+
+/** خصائص جهاز آبل من أي عنوان: العائلة / الشريحة / المقاس / التخزين / الرام / اللون */
+function appleFeatures_(s) {
+  const full = String(s || '');
+  const label = full.split(' — ').slice(1).join(' ');          // مواصفات منتجنا بعد " — " ليها الأولوية
+  const t = ' ' + normWords_(full).join(' ') + ' ';
+  const tl = ' ' + normWords_(label).join(' ') + ' ';
+  let fam = '';
+  if (/ MACBOOK /.test(t) || / MAC STUDIO | IMAC | MAC MINI /.test(t)) {
+    if (/ NEO /.test(t)) fam = 'NEO';
+    else if (/ STUDIO /.test(t)) fam = 'STUDIO';
+    else if (/ MINI /.test(t)) fam = 'MINI';
+    else if (/ IMAC /.test(t)) fam = 'IMAC';
+    else if (/ AIR /.test(t)) fam = 'AIR';
+    else if (/ MACBOOK PRO /.test(t) || / PRO /.test(t)) fam = 'PRO';
+  }
+  if (!fam) return {};
+  const chip = chip_(label) || chip_(full);
+  const size = ((/ (1[3-6]) /.exec(tl) || / (1[3-6]) (INCH )?/.exec(t)) || [])[1] || '';
+  const gb = (enText_(label || full).toUpperCase().match(/\b\d+\s?(GB|TB)\b/g) || [])
+    .map(x => /TB/.test(x) ? parseInt(x, 10) * 1024 : parseInt(x, 10));
+  const storage = gb.filter(n => n >= 256).sort((a, b) => b - a)[0] || null;
+  const ram = gb.filter(n => n <= 128).sort((a, b) => a - b)[0] || null;
+  const color = APPLE_COLORS.filter(c => (tl.length > 2 ? tl : t).indexOf(' ' + c + ' ') > -1)[0] || '';
+  const oled = / PROLED | OLED | XDR /.test(t);                         // MacBook Pro PROLED XDR = خط منتجات مختلف
+  const renewed = / RENEWED | REFURBISHED | REFURB | USED /.test(t);
+  return { fam: fam, chip: chip, size: size, storage: storage, ram: ram, color: color, oled: oled ? 'Y' : 'N', renewed: renewed ? 'Y' : 'N' };
+}
+
+/** ثقة مطابقة جهازين آبل: أي خاصية متعارضة = رفض، والأساسيات لازم تتطابق */
+function appleConfidence_(a, b) {
+  if (!a.fam || !b.fam) return null;
+  const keys = ['fam', 'chip', 'size', 'storage', 'ram', 'color', 'oled', 'renewed'];
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    if (a[k] && b[k] && String(a[k]) !== String(b[k])) return 0.1;     // تعارض صريح (Air ≠ Pro، 256 ≠ 512، Silver ≠ Midnight...)
+  }
+  if (!(a.chip && b.chip && a.storage && b.storage)) return 0.5;        // ناقص الشريحة أو التخزين → مراجعة
+  let c = 0.85;
+  if (a.ram && b.ram) c += 0.05;
+  if (a.color && b.color) c += 0.05;
+  if (a.size && b.size) c += 0.03;
+  return Math.min(0.98, c);
 }
 
 /* ======================= نطاق الفئات ======================= */
