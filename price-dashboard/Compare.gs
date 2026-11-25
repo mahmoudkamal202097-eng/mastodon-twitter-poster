@@ -42,7 +42,7 @@ function buildAggregates_(inp) {
 
   const catCount = {};
   let lastChecked = 0;
-  inp.prices.forEach(p => { const t = new Date(p.Checked_At).getTime(); if (t > lastChecked) lastChecked = t; });
+  inp.prices.forEach(p => { const t = dateMs_(p.Checked_At); if (t > lastChecked) lastChecked = t; });
 
   const products = inp.products.filter(p => !(ovBy[String(p.SKU)] && bool_(ovBy[String(p.SKU)].Hidden))).map(p => {
     const sku = String(p.SKU);
@@ -104,7 +104,7 @@ function buildAggregates_(inp) {
   return {
     now: inp.now || Date.now(),
     lastChecked: lastChecked,
-    lastSynced: inp.products.reduce((m, p) => Math.max(m, p.Last_Synced ? new Date(p.Last_Synced).getTime() : 0), 0),
+    lastSynced: inp.products.reduce((m, p) => Math.max(m, dateMs_(p.Last_Synced)), 0),
     samePct: samePct,
     competitors: comps.map(c => ({
       name: String(c.Competitor_Name), website: String(c.Website), categories: String(c.Categories || ''), platform: String(c.Platform_Type || ''),
@@ -155,4 +155,14 @@ function buildProductHistory_(history, sku, days) {
   });
   Object.keys(out).forEach(k => out[k].sort((a, b) => (a.d < b.d ? -1 : 1)));
   return out;
+}
+
+/** تاريخ من الشيت (Date أو نص "25/11/2026" أو "25/11/2026 14:05") → ms؛ يوم/شهر مصري مش أمريكي */
+function dateMs_(v) {
+  if (!v) return 0;
+  if (v instanceof Date) return v.getTime() || 0;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2}))?/.exec(String(v).trim());
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 12), +(m[5] || 0)).getTime();
+  const t = new Date(v).getTime();
+  return isFinite(t) ? t : 0;
 }

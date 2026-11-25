@@ -276,17 +276,17 @@ function renderOverview() {
       : '<h1>You’re competitive across <b style="color:#c9f1d8">all</b> compared products</h1><p>' + ar('مفيش منافس متوفر أرخص منك حاليًا') + '</p><button class="btn ghost" data-goto="cheaper">See where you lead →</button>') +
     '</div><div class="stats"><div class="st"><small>Cheaper / equal</small><b>' + (s.cheaper + s.same) + '</b></div><div class="st"><small>Only we have it</small><b>' + s.only_us + '</b></div><div class="st"><small>Coverage</small><b>' + s.coveragePct + '%</b></div></div></section>';
   var h = heroH + '<div class="grid g-info" style="margin-top:16px">' +
-    info('Last update', ago(D.lastChecked), 'Products synced ' + ago(D.lastSynced) + ' · ' + ar('آخر مزامنة'), '') +
+    info('Last update', ago(Math.max(D.lastChecked || 0, (D.progress && D.progress.finishedAt) || 0)), 'Products synced ' + ago(D.lastSynced) + ' · ' + ar('آخر مزامنة'), '') +
     info('Products monitored', '<span class="num">' + s.total + '</span>', 'In stock / pre-order ' + ar('بس'), '') +
     info('Coverage', '<span class="num">' + s.coveragePct + '%</span>', '<span class="num">' + s.withData + '/' + s.total + '</span> ' + ar('ليهم سعر منافس'), '<div class="meter"><i style="width:' + s.coveragePct + '%"></i></div>') +
-    info('Need a link', '<span class="num" style="color:' + (s.needs_help ? 'var(--warn)' : 'inherit') + '">' + s.needs_help + '</span>', '<span class="num">' + s.not_checked + '</span> ' + ar('لسه ما اتفحصوش'), '') +
+    info('Need a link', '<span class="num" style="color:' + (s.needs_help ? 'var(--warn)' : 'inherit') + '">' + s.needs_help + '</span>', '<span class="num">' + s.not_checked + '</span> ' + ar('لسه ملهمش سعر منافس'), '') +
     info('Check status', p.status === 'running' ? 'Running' : 'Idle', p.status === 'running' ? (p.pct + '% — ' + ({ sync: 'syncing', prices: 'reading prices', discover: 'finding matches' }[p.phase] || '')) : ar('التحديث الجاي') + ' <span class="num">' + esc(D.settings.hours) + '</span> ' + ar('بتوقيت القاهرة'), p.status === 'running' ? '<div class="meter"><i style="width:' + p.pct + '%"></i></div>' : '') +
     '</div>';
 
   h += '<div class="sec-t">Price position summary · ' + ar('موقفنا السعري') + '</div><div class="grid g-pos">';
   [['only_us', 'M12 2l3 7h7l-5.5 4.2L18 21l-6-4.5L6 21l1.5-7.8L2 9h7z'], ['same', 'M5 9h14M5 15h14'], ['cheaper', 'M12 5v14M6 13l6 6 6-6'], ['pricier', 'M12 19V5M6 11l6-6 6 6']].forEach(function (x) {
     var k = x[0], m = ST[k];
-    h += '<button type="button" class="card pos" data-st="' + k + '" style="--c:' + m.c + '"><div class="t"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="' + x[1] + '"/></svg>' + m.l + '</div><div class="big num">' + s[k] + '</div><div class="d ar" dir="rtl">' + (k === 'same' ? 'الفرق ضمن ±' + D.settings.same + '% من أرخص سعر' : m.d) + '</div><div class="pct num">' + Math.round(s[k] / tot * 100) + '%</div></button>';
+    h += '<button type="button" class="card pos" data-st="' + k + '" style="--c:' + m.c + '"><div class="t"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="' + x[1] + '"/></svg>' + m.l + '</div><div class="big num">' + s[k] + '</div><div class="d ar" dir="rtl">' + (k === 'same' ? 'الفرق ضمن ±' + D.settings.same + '% من أرخص سعر' : m.d) + '</div><div class="pct num">' + Math.round(s[k] / (s.withData || 1) * 100) + '%</div></button>';
   });
   h += '</div>';
 
